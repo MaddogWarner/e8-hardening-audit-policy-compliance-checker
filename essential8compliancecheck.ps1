@@ -3,6 +3,8 @@
 [CmdletBinding()]
 param()
 
+Set-StrictMode -Version Latest
+
 # ── Process & Memory Protection ───────────────────────────────────────────────
 
 # Checks whether LSASS is configured to run as a Protected Process Light (PPL),

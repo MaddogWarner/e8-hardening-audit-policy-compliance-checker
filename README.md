@@ -10,11 +10,27 @@ A read-only PowerShell audit script that checks key OS hardening controls on Win
 
 ## Usage
 
+Start the graphical launcher:
+
+```powershell
+.\starthere.ps1
+```
+
+If the launcher is not already running as administrator, it prompts for elevation before opening the Windows Forms interface. The launcher currently provides a description of the Essential Eight hardening assessment workflow and can start the read-only audit script or the MDE exclusions assessment.
+
+Run the audit script directly:
+
 ```powershell
 .\essential8compliancecheck.ps1
 ```
 
-The script is audit-only — it makes no changes to system settings.
+Assess Microsoft Defender Antivirus exclusions directly:
+
+```powershell
+.\mdeexclusionsassess.ps1
+```
+
+The current assessment scripts are audit-only — they make no changes to system settings. Remediation guidance and remediation execution are planned launcher workflows and are not implemented yet.
 
 ## What It Checks
 
@@ -48,6 +64,7 @@ The script is audit-only — it makes no changes to system settings.
 | Real-Time Protection | Defender real-time monitoring active |
 | Cloud-Delivered Protection | MAPS/cloud protection enabled (basic or advanced) |
 | Tamper Protection | Defender settings protected from unauthorised modification |
+| Microsoft Defender Antivirus Exclusions | Alerts on file, folder, and process exclusions for `C:\Users`, `C:\Temp`, or entire drive roots such as `C:\` or `D:` |
 
 ### Attack Surface Reduction (14 rules)
 

@@ -4,9 +4,19 @@ All notable changes to this project will be documented here.
 
 ## [Unreleased]
 
+### Added
+
+- `mdeexclusionsassess.ps1` — read-only Microsoft Defender Antivirus exclusion assessment that self-elevates, reads local and policy registry exclusion locations, and alerts on exclusions for `C:\Users`, `C:\Temp`, or entire drive roots.
+- `starthere.ps1` — Windows Forms launcher that self-elevates when required, describes the Essential Eight hardening assessment workflow, and can start the existing read-only audit script.
+- `ISSUES.md` — issue log for tracking known problems and open investigations across context.
+
 ### Changed
 
+- `starthere.ps1` now includes an `MDE Exclusions` button that launches `mdeexclusionsassess.ps1` and describes the Defender exclusion assessment workflow.
 - Renamed `Lsassandmemoryintegrity.ps1` to `essential8compliancecheck.ps1`.
+- Added `Set-StrictMode -Version Latest` to `essential8compliancecheck.ps1` for consistency with the other scripts.
+- Fixed `Sort-Object` in `mdeexclusionsassess.ps1` — only `Alert` is now sorted descending; `Source`, `ExclusionType`, and `ExclusionValue` sort ascending.
+- Updated `AGENTS.md` repository structure to include all current scripts and files.
 - Treat `RunAsPPL` values `1` and `2` as LSASS PPL enabled to avoid false negatives on newer Windows builds.
 - `Get-MemoryIntegrityStatus` now prefers `Win32_DeviceGuard.SecurityServicesRunning` for HVCI runtime state and falls back to registry configuration only when runtime state is unavailable.
 - Corrected Credential Guard registry fallback to read `LsaCfgFlags` from `HKLM:\SYSTEM\CurrentControlSet\Control\Lsa`.
