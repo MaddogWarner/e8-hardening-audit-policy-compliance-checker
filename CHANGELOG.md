@@ -6,7 +6,7 @@ All notable changes to this project will be documented here.
 
 ### Changed
 
-- Renamed `Lsassandmemoryintegrity.ps1` to `basic essential8compliancecheck.ps1`.
+- Renamed `Lsassandmemoryintegrity.ps1` to `essential8compliancecheck.ps1`.
 - Treat `RunAsPPL` values `1` and `2` as LSASS PPL enabled to avoid false negatives on newer Windows builds.
 - `Get-MemoryIntegrityStatus` now prefers `Win32_DeviceGuard.SecurityServicesRunning` for HVCI runtime state and falls back to registry configuration only when runtime state is unavailable.
 - Corrected Credential Guard registry fallback to read `LsaCfgFlags` from `HKLM:\SYSTEM\CurrentControlSet\Control\Lsa`.
@@ -38,7 +38,7 @@ All notable changes to this project will be documented here.
 
 ### Added
 
-- `basic essential8compliancecheck.ps1` (originally `Lsassandmemoryintegrity.ps1`) — initial audit script covering four hardening controls:
+- `essential8compliancecheck.ps1` (originally `Lsassandmemoryintegrity.ps1`) — initial audit script covering four hardening controls:
   - LSASS Protected Process Light (PPL) — checks `RunAsPPL` registry value
   - Memory Integrity / HVCI — version-gated check (Win 10 1709+ / Server 2019+), reads `HypervisorEnforcedCodeIntegrity` registry value
   - Process Creation Command Line Logging — checks `ProcessCreationIncludeCmdLine_Enabled` registry value
