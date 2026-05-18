@@ -1,4 +1,4 @@
-# Basic Essential Eight Compliance Check
+# Essential Eight Compliance Check
 
 A read-only PowerShell audit script that checks key OS hardening controls on Windows hosts against the [ASD Essential Eight](https://www.cyber.gov.au/resources-business-and-government/essential-cyber-security/essential-eight) maturity model.
 
@@ -11,7 +11,7 @@ A read-only PowerShell audit script that checks key OS hardening controls on Win
 ## Usage
 
 ```powershell
-.\basic essential8compliancecheck.ps1
+.\essential8compliancecheck.ps1
 ```
 
 The script is audit-only — it makes no changes to system settings.
