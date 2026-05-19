@@ -1,47 +1,4 @@
-[CmdletBinding()]
-param(
-    [switch]$NoElevation
-)
-
 Set-StrictMode -Version Latest
-
-function Test-IsWindowsHost {
-    return [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
-}
-
-function Test-IsAdministrator {
-    $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
-    $principal = New-Object Security.Principal.WindowsPrincipal($identity)
-
-    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-}
-
-function Invoke-SelfElevation {
-    [CmdletBinding(SupportsShouldProcess = $true)]
-    param()
-
-    if (-not $PSCommandPath) {
-        throw 'Unable to determine the current script path for elevation.'
-    }
-
-    $powerShellPath = (Get-Process -Id $PID).Path
-    if (-not $powerShellPath) {
-        $powerShellPath = if ($PSVersionTable.PSEdition -eq 'Core') { 'pwsh.exe' } else { 'powershell.exe' }
-    }
-
-    $argumentList = @(
-        '-NoProfile'
-        '-ExecutionPolicy'
-        'Bypass'
-        '-File'
-        "`"$PSCommandPath`""
-        '-NoElevation'
-    )
-
-    if ($PSCmdlet.ShouldProcess($PSCommandPath, 'Restart this script with administrator privileges')) {
-        Start-Process -FilePath $powerShellPath -ArgumentList $argumentList -Verb RunAs
-    }
-}
 
 function Get-DefenderExclusionRegistryTarget {
     @(
@@ -58,12 +15,12 @@ function Get-DefenderExclusionRegistryTarget {
         [PSCustomObject]@{
             Source        = 'Policy'
             ExclusionType = 'Path'
-            RegistryPath  = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Exclusions\Exclusions_Paths'
+            RegistryPath  = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Exclusions\Paths'
         }
         [PSCustomObject]@{
             Source        = 'Policy'
             ExclusionType = 'Process'
-            RegistryPath  = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Exclusions\Exclusions_Processes'
+            RegistryPath  = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Exclusions\Processes'
         }
     )
 }
@@ -187,7 +144,7 @@ function Get-DefenderExclusionRisk {
         }
     }
 
-    if ($normalisedValue -match '^(?i)c:\\users(\\|$|\*)') {
+    if ($normalisedValue -match '(?i)^c:\\users(\\|$|\*)') {
         return [PSCustomObject]@{
             Alert      = $true
             Severity   = 'High'
@@ -196,7 +153,7 @@ function Get-DefenderExclusionRisk {
         }
     }
 
-    if ($normalisedValue -match '^(?i)c:\\temp(\\|$|\*)') {
+    if ($normalisedValue -match '(?i)^c:\\temp(\\|$|\*)') {
         return [PSCustomObject]@{
             Alert      = $true
             Severity   = 'High'
@@ -220,6 +177,8 @@ function Get-MdeExclusionAssessment {
         if (-not $entry.Present) {
             [PSCustomObject]@{
                 Check            = 'Microsoft Defender Antivirus Exclusions'
+                Category         = 'MDE Exclusions'
+                ML               = $null
                 Alert            = $false
                 Severity         = 'None'
                 Source           = $entry.Source
@@ -230,16 +189,22 @@ function Get-MdeExclusionAssessment {
                 RegistryPath     = $entry.RegistryPath
                 RegistryValue    = $entry.ValueName
                 RegistryData     = $entry.ValueData
+                Detail           = $entry.EntryStatus
+                Description      = 'Inventories Microsoft Defender Antivirus exclusions from local and policy registry locations.'
+                Recommendation   = 'Review broad or unnecessary exclusions and remove them through the controlling policy or management plane.'
             }
             continue
         }
 
         $risk = Get-DefenderExclusionRisk -ExclusionValue $entry.ExclusionValue
+        $severity = if ($risk.Alert) { 'High' } else { 'Review' }
 
         [PSCustomObject]@{
-            Check            = 'Microsoft Defender Antivirus Exclusions'
+            Check            = "$($entry.Source) $($entry.ExclusionType) Exclusion"
+            Category         = 'MDE Exclusions'
+            ML               = $null
             Alert            = $risk.Alert
-            Severity         = $risk.Severity
+            Severity         = $severity
             Source           = $entry.Source
             ExclusionType    = $entry.ExclusionType
             ExclusionValue   = $entry.ExclusionValue
@@ -248,28 +213,9 @@ function Get-MdeExclusionAssessment {
             RegistryPath     = $entry.RegistryPath
             RegistryValue    = $entry.ValueName
             RegistryData     = $entry.ValueData
+            Detail           = "$($entry.ExclusionValue) - $($risk.Reason)"
+            Description      = 'Inventories Microsoft Defender Antivirus exclusions and highlights broad exclusions that create avoidable detection blind spots.'
+            Recommendation   = 'Validate the business need, scope the exclusion as narrowly as possible, and remove exclusions covering user profiles, temporary folders, or drive roots.'
         }
     }
 }
-
-if (-not (Test-IsWindowsHost)) {
-    throw 'mdeexclusionsassess.ps1 requires Windows because Microsoft Defender Antivirus exclusion state is stored in the Windows registry.'
-}
-
-if (-not (Test-IsAdministrator)) {
-    if ($NoElevation) {
-        throw 'Administrator privileges are required to read Microsoft Defender Antivirus exclusion registry locations.'
-    }
-
-    Invoke-SelfElevation
-    return
-}
-
-$results = @(Get-MdeExclusionAssessment)
-$alerts = @($results | Where-Object { $_.Alert -eq $true })
-
-if ($alerts.Count -gt 0) {
-    Write-Warning "$($alerts.Count) high-risk Microsoft Defender Antivirus exclusion(s) detected."
-}
-
-$results | Sort-Object @{Expression = 'Alert'; Descending = $true}, Source, ExclusionType, ExclusionValue | Format-List

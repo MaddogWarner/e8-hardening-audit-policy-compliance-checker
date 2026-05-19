@@ -1,36 +1,32 @@
-# Essential Eight Compliance Check
+# ASD Essential Eight Hardening Compliance Tool
 
-A read-only PowerShell audit script that checks key OS hardening controls on Windows hosts against the [ASD Essential Eight](https://www.cyber.gov.au/resources-business-and-government/essential-cyber-security/essential-eight) maturity model.
+A read-only PowerShell and Windows Forms tool that assesses Windows OS and application hardening controls against the [ASD Essential Eight](https://www.cyber.gov.au/resources-business-and-government/essential-cyber-security/essential-eight) maturity model. The GUI runs checks inline, surfaces Microsoft Defender Antivirus exclusion risks, and can export a markdown report.
 
 ## Requirements
 
 - Windows 10 / 11 or Windows Server 2016 / 2019 / 2022
 - PowerShell 5.1 or later
-- Administrator privileges (script will not run without them)
+- Administrator privileges. `starthere.ps1` prompts for elevation if needed.
 
 ## Usage
 
-Start the graphical launcher:
+Start the graphical assessment tool:
 
 ```powershell
 .\starthere.ps1
 ```
 
-If the launcher is not already running as administrator, it prompts for elevation before opening the Windows Forms interface. The launcher currently provides a description of the Essential Eight hardening assessment workflow and can start the read-only audit script or the MDE exclusions assessment.
+If the tool is not already running as administrator, it prompts for elevation before opening the Windows Forms interface.
 
-Run the audit script directly:
+The GUI provides:
 
-```powershell
-.\essential8compliancecheck.ps1
-```
+- `Run Scan` - runs the Essential Eight hardening checks and populates results in the GUI.
+- `MDE Exclusions` - inventories Microsoft Defender Antivirus exclusions and highlights obviously risky exclusions.
+- `Save Report` - exports the current results to a UTF-8 markdown report.
 
-Assess Microsoft Defender Antivirus exclusions directly:
+`essential8compliancecheck.ps1` and `mdeexclusionsassess.ps1` are dot-sourced function libraries used by the GUI. They are not standalone report runners in the current architecture.
 
-```powershell
-.\mdeexclusionsassess.ps1
-```
-
-The current assessment scripts are audit-only — they make no changes to system settings. Remediation guidance and remediation execution are planned launcher workflows and are not implemented yet.
+The current assessment workflow is audit-only - it makes no changes to system settings. Remediation guidance and remediation execution are planned future workflows and are not implemented yet.
 
 ## What It Checks
 
@@ -56,6 +52,8 @@ The current assessment scripts are audit-only — they make no changes to system
 | Module Logging | Pipeline execution details logged to Event ID 4103 |
 | Transcription | Full session transcript written to disk |
 | PowerShell v2 Engine Disabled | Legacy PS v2 engine removed (bypasses AMSI and logging if present) |
+| PowerShell Constrained Language Mode | Current session language mode and lockdown policy signal |
+| PowerShell Execution Policy | Machine policy or local machine scope set to `AllSigned` or `RemoteSigned`, with no unsafe scope override |
 
 ### Windows Defender
 
@@ -85,7 +83,8 @@ Each rule reports its current action: `Block`, `Audit`, `Warn`, or `Not Configur
 | Check | What it looks for |
 |---|---|
 | SMBv1 Disabled | Legacy SMBv1 protocol disabled (EternalBlue exposure) |
-| SMB Signing Required | SMB packet signing enforced to prevent MITM tampering |
+| SMB Server Signing Required | SMB packet signing enforced for inbound SMB sessions |
+| SMB Client Signing Required | SMB packet signing enforced for outbound SMB sessions |
 | Windows Firewall — Domain Profile | Firewall enabled for domain-joined networks |
 | Windows Firewall — Private Profile | Firewall enabled for private networks |
 | Windows Firewall — Public Profile | Firewall enabled for public networks |
@@ -110,13 +109,26 @@ Each rule reports its current action: `Block`, `Audit`, `Warn`, or `Not Configur
 | Secure Boot | Secure Boot active; noted if system is non-UEFI |
 | AutoRun Disabled | AutoRun disabled for all drive types (removable media protection) |
 
-## Output
+## GUI Output
 
-Each check returns an object with at minimum:
+The GUI displays each check with:
 
+- `Category` - grouping label such as `Defender`, `PowerShell Hardening`, or `Memory Protection`
 - `Check` — human-readable control name
+- `ML` - mapped Essential Eight maturity level where applicable
+- `Status` - `PASS`, `FAIL`, `AUDIT`, `REVIEW`, `N/A`, `NOT SUPPORTED`, or `HIGH RISK`
+- `Details` - human-readable evidence summary
+
+Each library check returns an object with at minimum:
+
+- `Category` - grouping label
+- `ML` - ASD maturity level where applicable
+- `Check` - human-readable control name
 - `Enabled` — `$true` (compliant) / `$false` (non-compliant) / `$null` (indeterminate)
 - `RawValue` — the raw registry or API value for verification
+- `Detail` - human-readable evidence summary
+- `Description` - one-sentence explanation of the control
+- `Recommendation` - brief recommended target state
 - `Supported` — present on version-gated checks; `$false` means the check was skipped on this OS build
 - `Note` — present when additional context is relevant (e.g. RDP disabled, non-UEFI system)
 
@@ -127,3 +139,4 @@ ASR rule checks also include `ActionLabel` (human-readable action) and `RuleGUID
 - [ASD Essential Eight](https://www.cyber.gov.au/resources-business-and-government/essential-cyber-security/essential-eight)
 - [ASD Essential Eight Maturity Model](https://www.cyber.gov.au/resources-business-and-government/essential-cyber-security/essential-eight/essential-eight-maturity-model)
 - [Microsoft ASR Rules Reference](https://learn.microsoft.com/en-us/defender-endpoint/attack-surface-reduction-rules-reference)
+- [Microsoft Defender Antivirus Exclusions](https://learn.microsoft.com/en-us/defender-endpoint/defender-endpoint-antivirus-exclusions)
