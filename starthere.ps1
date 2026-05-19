@@ -3,8 +3,10 @@ param()
 
 Set-StrictMode -Version Latest
 
-$script:ToolVersion = '0.3.0'
+$script:ToolVersion = '0.4.0'
 $script:AssessmentResults = New-Object System.Collections.ArrayList
+$script:AuditPolicyResults = New-Object System.Collections.ArrayList
+$script:AuditPolCache = $null
 $script:SystemInfo = $null
 
 function Test-IsWindowsHost {
@@ -48,8 +50,9 @@ function Import-AssessmentLibrary {
     $scriptRoot = Split-Path -Parent $PSCommandPath
     $essentialEightLibrary = Join-Path -Path $scriptRoot -ChildPath 'essential8compliancecheck.ps1'
     $mdeExclusionsLibrary = Join-Path -Path $scriptRoot -ChildPath 'mdeexclusionsassess.ps1'
+    $auditPolicyLibrary = Join-Path -Path $scriptRoot -ChildPath 'auditpolicyassess.ps1'
 
-    foreach ($library in @($essentialEightLibrary, $mdeExclusionsLibrary)) {
+    foreach ($library in @($essentialEightLibrary, $mdeExclusionsLibrary, $auditPolicyLibrary)) {
         if (-not (Test-Path -Path $library -PathType Leaf)) {
             throw "Required assessment library not found: $library"
         }
@@ -287,18 +290,24 @@ function Get-MarkdownReport {
         [psobject]$SystemInfo,
 
         [Parameter(Mandatory = $true)]
-        [object[]]$Results
+        [object[]]$Results,
+
+        [object[]]$AuditPolicyResults = @()
     )
 
-    $e8Results = @($Results | Where-Object { $_.Category -ne 'MDE Exclusions' })
+    $e8Results = @($Results | Where-Object { $_.Category -ne 'MDE Exclusions' -and $_.PSObject.Properties.Name -notcontains 'RequiredSetting' })
     $mdeResults = @($Results | Where-Object { $_.Category -eq 'MDE Exclusions' -and $_.ExclusionValue })
-    $totalChecks = $e8Results.Count + $mdeResults.Count
+    $auditResults = @($AuditPolicyResults)
+    $summaryResults = @($e8Results + $mdeResults + $auditResults)
+    $totalChecks = $summaryResults.Count
     $passCount = @($e8Results | Where-Object { (Get-AssessmentStatus -Result $_) -eq 'PASS' }).Count
     $failCount = @($e8Results | Where-Object { (Get-AssessmentStatus -Result $_) -eq 'FAIL' }).Count
-    $naCount = @($Results | Where-Object { (Get-AssessmentStatus -Result $_) -eq 'N/A' }).Count
-    $notSupportedCount = @($Results | Where-Object { (Get-AssessmentStatus -Result $_) -eq 'NOT SUPPORTED' }).Count
-    $reviewCount = @($Results | Where-Object { (Get-AssessmentStatus -Result $_) -in @('AUDIT', 'REVIEW', 'HIGH RISK') }).Count
-    $nonCompliant = @($Results | Where-Object { (Get-AssessmentStatus -Result $_) -in @('FAIL', 'AUDIT', 'REVIEW', 'HIGH RISK') })
+    $auditPassCount = @($auditResults | Where-Object { (Get-AssessmentStatus -Result $_) -eq 'PASS' }).Count
+    $auditFailCount = @($auditResults | Where-Object { (Get-AssessmentStatus -Result $_) -eq 'FAIL' }).Count
+    $naCount = @($summaryResults | Where-Object { (Get-AssessmentStatus -Result $_) -eq 'N/A' }).Count
+    $notSupportedCount = @($summaryResults | Where-Object { (Get-AssessmentStatus -Result $_) -eq 'NOT SUPPORTED' }).Count
+    $reviewCount = @($summaryResults | Where-Object { (Get-AssessmentStatus -Result $_) -in @('AUDIT', 'REVIEW', 'HIGH RISK') }).Count
+    $nonCompliant = @($e8Results + $mdeResults | Where-Object { (Get-AssessmentStatus -Result $_) -in @('FAIL', 'AUDIT', 'REVIEW', 'HIGH RISK') })
 
     $builder = New-Object System.Text.StringBuilder
     [void]$builder.AppendLine("# ASD Essential Eight $([char]0x2014) Hardening Compliance Report")
@@ -327,8 +336,8 @@ function Get-MarkdownReport {
     [void]$builder.AppendLine('| | Count |')
     [void]$builder.AppendLine('|---|---|')
     [void]$builder.AppendLine("| Total Checks | $totalChecks |")
-    [void]$builder.AppendLine("| Pass | $passCount |")
-    [void]$builder.AppendLine("| Fail | $failCount |")
+    [void]$builder.AppendLine("| Pass | $($passCount + $auditPassCount) |")
+    [void]$builder.AppendLine("| Fail | $($failCount + $auditFailCount) |")
     [void]$builder.AppendLine("| Review / Audit / High Risk | $reviewCount |")
     [void]$builder.AppendLine("| Not Applicable | $naCount |")
     [void]$builder.AppendLine("| Not Supported | $notSupportedCount |")
@@ -369,6 +378,42 @@ function Get-MarkdownReport {
         }
     }
 
+    if ($auditResults.Count -gt 0) {
+        [void]$builder.AppendLine()
+        [void]$builder.AppendLine('---')
+        [void]$builder.AppendLine()
+        [void]$builder.AppendLine('## ASD Audit Policy Assessment')
+        [void]$builder.AppendLine()
+        [void]$builder.AppendLine('*Based on ASD "Windows Event Logging and Forwarding" guidance.*')
+        [void]$builder.AppendLine()
+        [void]$builder.AppendLine('| Category | Check | ML | Status | Current Setting | Required Setting |')
+        [void]$builder.AppendLine('|---|---|---|---|---|---|')
+
+        foreach ($result in $auditResults) {
+            $ml = if ($result.ML) { $result.ML } else { '-' }
+            [void]$builder.AppendLine("| $(ConvertTo-MarkdownSafeText $result.Category) | $(ConvertTo-MarkdownSafeText $result.Check) | $(ConvertTo-MarkdownSafeText $ml) | $(Get-AssessmentStatus -Result $result) | $(ConvertTo-MarkdownSafeText $result.Detail) | $(ConvertTo-MarkdownSafeText $result.RequiredSetting) |")
+        }
+
+        $nonCompliantAudit = @($auditResults | Where-Object { (Get-AssessmentStatus -Result $_) -in @('FAIL', 'REVIEW') })
+
+        [void]$builder.AppendLine()
+        [void]$builder.AppendLine('---')
+        [void]$builder.AppendLine()
+        [void]$builder.AppendLine('## Non-Compliant Audit Policy Controls')
+        [void]$builder.AppendLine()
+        [void]$builder.AppendLine('| Check | ML | Current Setting | Required Setting | Recommendation |')
+        [void]$builder.AppendLine('|---|---|---|---|---|')
+
+        if ($nonCompliantAudit.Count -eq 0) {
+            [void]$builder.AppendLine('| - | - | No non-compliant audit policy findings captured | - | - |')
+        } else {
+            foreach ($result in $nonCompliantAudit) {
+                $ml = if ($result.ML) { $result.ML } else { '-' }
+                [void]$builder.AppendLine("| $(ConvertTo-MarkdownSafeText $result.Check) | $(ConvertTo-MarkdownSafeText $ml) | $(ConvertTo-MarkdownSafeText $result.Detail) | $(ConvertTo-MarkdownSafeText $result.RequiredSetting) | $(ConvertTo-MarkdownSafeText $result.Recommendation) |")
+            }
+        }
+    }
+
     [void]$builder.AppendLine()
     [void]$builder.AppendLine('---')
     [void]$builder.AppendLine()
@@ -399,7 +444,9 @@ function Save-MarkdownReport {
         [psobject]$SystemInfo,
 
         [Parameter(Mandatory = $true)]
-        [object[]]$Results
+        [object[]]$Results,
+
+        [object[]]$AuditPolicyResults = @()
     )
 
     $dialog = New-Object System.Windows.Forms.SaveFileDialog
@@ -413,7 +460,7 @@ function Save-MarkdownReport {
         return $false
     }
 
-    $report = Get-MarkdownReport -SystemInfo $SystemInfo -Results $Results
+    $report = Get-MarkdownReport -SystemInfo $SystemInfo -Results $Results -AuditPolicyResults $AuditPolicyResults
     $encoding = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($dialog.FileName, $report, $encoding)
     return $true
@@ -445,7 +492,7 @@ function Show-StartHereForm {
     $titleLabel.Location = New-Object System.Drawing.Point(18, 10)
 
     $subtitleLabel = New-Object System.Windows.Forms.Label
-    $subtitleLabel.Text = "Audit-only $([char]0x00B7) Read-only $([char]0x00B7) No changes made"
+    $subtitleLabel.Text = "ASD E8 Hardening  $([char]0x00B7)  MDE Exclusions  $([char]0x00B7)  Audit Policy  $([char]0x00B7)  Audit-only  $([char]0x00B7)  No system changes"
     $subtitleLabel.Font = New-Object System.Drawing.Font('Segoe UI', 9)
     $subtitleLabel.ForeColor = [System.Drawing.Color]::DimGray
     $subtitleLabel.AutoSize = $true
@@ -564,10 +611,15 @@ function Show-StartHereForm {
     $mdeButton.Size = New-Object System.Drawing.Size(130, 32)
     $mdeButton.Location = New-Object System.Drawing.Point(120, 2)
 
+    $auditPolicyButton = New-Object System.Windows.Forms.Button
+    $auditPolicyButton.Text = 'Audit Policy'
+    $auditPolicyButton.Size = New-Object System.Drawing.Size(115, 32)
+    $auditPolicyButton.Location = New-Object System.Drawing.Point(260, 2)
+
     $saveButton = New-Object System.Windows.Forms.Button
     $saveButton.Text = 'Save Report'
     $saveButton.Size = New-Object System.Drawing.Size(110, 32)
-    $saveButton.Location = New-Object System.Drawing.Point(260, 2)
+    $saveButton.Location = New-Object System.Drawing.Point(385, 2)
     $saveButton.Enabled = $false
 
     $closeButton = New-Object System.Windows.Forms.Button
@@ -577,12 +629,13 @@ function Show-StartHereForm {
     $closeButton.Anchor = 'Top,Right'
     $closeButton.Add_Click({ $form.Close() })
 
-    $buttonPanel.Controls.AddRange(@($runScanButton, $mdeButton, $saveButton, $closeButton))
+    $buttonPanel.Controls.AddRange(@($runScanButton, $mdeButton, $auditPolicyButton, $saveButton, $closeButton))
 
     $runScanButton.Add_Click({
         try {
             $runScanButton.Enabled = $false
             $mdeButton.Enabled = $false
+            $auditPolicyButton.Enabled = $false
             $saveButton.Enabled = $false
             $statusLabel.Text = 'Scanning Essential Eight hardening controls...'
             $progressBar.Visible = $true
@@ -622,6 +675,8 @@ function Show-StartHereForm {
         } finally {
             $runScanButton.Enabled = $true
             $mdeButton.Enabled = $true
+            $auditPolicyButton.Enabled = $true
+            $saveButton.Enabled = ($script:AssessmentResults.Count -gt 0 -or $script:AuditPolicyResults.Count -gt 0)
             $progressBar.Visible = $false
         }
     })
@@ -630,6 +685,8 @@ function Show-StartHereForm {
         try {
             $mdeButton.Enabled = $false
             $runScanButton.Enabled = $false
+            $auditPolicyButton.Enabled = $false
+            $saveButton.Enabled = $false
             $statusLabel.Text = 'Scanning Microsoft Defender Antivirus exclusions...'
             $progressBar.Visible = $true
             $progressBar.Value = 0
@@ -683,6 +740,69 @@ function Show-StartHereForm {
         } finally {
             $mdeButton.Enabled = $true
             $runScanButton.Enabled = $true
+            $auditPolicyButton.Enabled = $true
+            $saveButton.Enabled = ($script:AssessmentResults.Count -gt 0 -or $script:AuditPolicyResults.Count -gt 0)
+            $progressBar.Visible = $false
+        }
+    })
+
+    $auditPolicyButton.Add_Click({
+        try {
+            $runScanButton.Enabled = $false
+            $mdeButton.Enabled = $false
+            $auditPolicyButton.Enabled = $false
+            $saveButton.Enabled = $false
+            $script:AuditPolCache = $null
+            [void]$script:AuditPolicyResults.Clear()
+
+            $existingAuditItems = @($resultsListView.Items | Where-Object {
+                $_.Tag -and $_.Tag.PSObject.Properties.Name -contains 'RequiredSetting'
+            })
+            foreach ($item in $existingAuditItems) {
+                $resultsListView.Items.Remove($item)
+            }
+            $script:AssessmentResults = New-Object System.Collections.ArrayList
+            foreach ($item in $resultsListView.Items) {
+                [void]$script:AssessmentResults.Add($item.Tag)
+            }
+
+            if (-not $script:SystemInfo) {
+                $script:SystemInfo = Get-SystemInfo
+                Show-SystemInfoPanel -Labels $systemLabels -Info $script:SystemInfo
+            }
+
+            $commands = @(Get-AuditPolicyCheckCommands)
+            $progressBar.Visible = $true
+            $progressBar.Value = 0
+            $progressBar.Maximum = [Math]::Max(1, $commands.Count)
+            $statusLabel.Text = 'Running audit policy checks...'
+            [System.Windows.Forms.Application]::DoEvents()
+
+            foreach ($command in $commands) {
+                $results = @(& $command)
+                foreach ($result in $results) {
+                    Add-AssessmentResultRow -ListView $resultsListView -Result $result
+                    [void]$script:AuditPolicyResults.Add($result)
+                }
+
+                $progressBar.Value = [Math]::Min($progressBar.Value + 1, $progressBar.Maximum)
+                [System.Windows.Forms.Application]::DoEvents()
+            }
+
+            $passed = @($script:AuditPolicyResults | Where-Object {
+                $_.Enabled -eq $true -or ($_.PSObject.Properties.Name -contains 'Supported' -and $_.Supported -eq $false)
+            }).Count
+            $total = $script:AuditPolicyResults.Count
+            $statusLabel.Text = "Audit policy check complete - $passed of $total checks passed"
+            $saveButton.Enabled = ($script:AssessmentResults.Count -gt 0 -or $script:AuditPolicyResults.Count -gt 0)
+        } catch {
+            Write-Warning "Audit policy assessment failed: $_"
+            $statusLabel.Text = "Audit policy assessment failed: $_"
+        } finally {
+            $runScanButton.Enabled = $true
+            $mdeButton.Enabled = $true
+            $auditPolicyButton.Enabled = $true
+            $saveButton.Enabled = ($script:AssessmentResults.Count -gt 0 -or $script:AuditPolicyResults.Count -gt 0)
             $progressBar.Visible = $false
         }
     })
@@ -698,7 +818,7 @@ function Show-StartHereForm {
             return
         }
 
-        if (Save-MarkdownReport -SystemInfo $script:SystemInfo -Results @($script:AssessmentResults)) {
+        if (Save-MarkdownReport -SystemInfo $script:SystemInfo -Results @($script:AssessmentResults) -AuditPolicyResults @($script:AuditPolicyResults)) {
             $statusLabel.Text = 'Report saved'
         }
     })

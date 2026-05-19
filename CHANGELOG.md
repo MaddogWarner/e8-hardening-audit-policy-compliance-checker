@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented here.
 
+## [0.4.0] - 2026-05-19
+
+### Added
+
+- `auditpolicyassess.ps1`, a read-only ASD Windows Audit Policy compliance checker with 25 checks covering event log sizes, logon/logoff auditing, account management, policy change, system integrity, process tracking, object access, and outgoing NTLM auditing.
+- Cached `auditpol.exe /get /category:* /r` collection so audit policy subcategory checks reuse a single `auditpol.exe` call per Audit Policy button run.
+- `Audit Policy` button in `starthere.ps1` that appends audit policy findings to the existing GUI results list.
+- Dedicated markdown report sections for `ASD Audit Policy Assessment` and `Non-Compliant Audit Policy Controls`.
+
+### Changed
+
+- Bumped the GUI tool version to `0.4.0`.
+- Updated the GUI subtitle to reflect the three scan modes: Essential Eight hardening, MDE exclusions, and audit policy.
+- Extended documentation and project instructions to include `auditpolicyassess.ps1`, the new Audit Policy workflow, and the ASD Windows Event Logging and Forwarding reference.
+
+### Fixed
+
+- Audit Policy re-runs now remove previous audit policy rows from the GUI and rebuild the shared results collection before adding fresh results.
+
+### Validation
+
+- PowerShell parser validation passed for `starthere.ps1`, `essential8compliancecheck.ps1`, `mdeexclusionsassess.ps1`, and `auditpolicyassess.ps1`.
+- PSScriptAnalyzer returned no findings for `starthere.ps1`, `essential8compliancecheck.ps1`, `mdeexclusionsassess.ps1`, and `auditpolicyassess.ps1`.
+- Windows GUI execution and end-to-end `auditpol.exe` validation remain pending because the implementation workspace is not a Windows host.
+
 ## [Unreleased]
 
 ### Added

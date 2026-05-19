@@ -22,11 +22,24 @@ The GUI provides:
 
 - `Run Scan` - runs the Essential Eight hardening checks and populates results in the GUI.
 - `MDE Exclusions` - inventories Microsoft Defender Antivirus exclusions and highlights obviously risky exclusions.
+- `Audit Policy` - assesses local Windows Advanced Audit Policy and event log size settings against ASD Windows Event Logging and Forwarding guidance.
 - `Save Report` - exports the current results to a UTF-8 markdown report.
 
-`essential8compliancecheck.ps1` and `mdeexclusionsassess.ps1` are dot-sourced function libraries used by the GUI. They are not standalone report runners in the current architecture.
+`essential8compliancecheck.ps1`, `mdeexclusionsassess.ps1`, and `auditpolicyassess.ps1` are dot-sourced function libraries used by the GUI. They are not standalone report runners in the current architecture.
 
 The current assessment workflow is audit-only - it makes no changes to system settings. Remediation guidance and remediation execution are planned future workflows and are not implemented yet.
+
+## Repository Structure
+
+| File | Purpose |
+|---|---|
+| `starthere.ps1` | Windows Forms GUI, self-elevation entry point, scan orchestration, system information collection, and markdown report generation |
+| `essential8compliancecheck.ps1` | Essential Eight hardening control function library |
+| `mdeexclusionsassess.ps1` | Microsoft Defender Antivirus exclusion inventory and risk assessment function library |
+| `auditpolicyassess.ps1` | ASD Windows Audit Policy and event log configuration assessment function library |
+| `README.md` | Usage, requirements, check coverage, and references |
+| `CHANGELOG.md` | Notable project changes |
+| `ISSUES.md` | Known issues and open investigations |
 
 ## What It Checks
 
@@ -43,6 +56,38 @@ The current assessment workflow is audit-only - it makes no changes to system se
 | Check | What it looks for |
 |---|---|
 | Process Creation Command Line Logging | Full command-line arguments captured in Event ID 4688 |
+
+### ASD Audit Policy
+
+The `Audit Policy` button reads Advanced Audit Policy once per run using `auditpol.exe /get /category:* /r`, checks event log maximum sizes with `Get-WinEvent -ListLog`, and checks outgoing NTLM audit posture from the registry. It appends results to the GUI and adds dedicated audit policy sections to saved markdown reports.
+
+| Category | Check | Required setting |
+|---|---|---|
+| Event Log Configuration | Security Event Log Size | At least 2,097,152 KB |
+| Event Log Configuration | Application Event Log Size | At least 65,536 KB |
+| Event Log Configuration | System Event Log Size | At least 65,536 KB |
+| Logon & Logoff Auditing | Audit Account Lockout | Failure |
+| Logon & Logoff Auditing | Audit Logon | Success and Failure |
+| Logon & Logoff Auditing | Audit Logoff | Success |
+| Logon & Logoff Auditing | Audit Special Logon | Success and Failure |
+| Logon & Logoff Auditing | Audit Group Membership | Success |
+| Logon & Logoff Auditing | Audit Other Logon/Logoff Events | Success and Failure |
+| Account Management Auditing | Audit User Account Management | Success and Failure |
+| Account Management Auditing | Audit Security Group Management | Success and Failure |
+| Account Management Auditing | Audit Computer Account Management | Success and Failure |
+| Account Management Auditing | Audit Other Account Management Events | Success and Failure |
+| Policy Change Auditing | Audit Policy Change | Success and Failure |
+| Policy Change Auditing | Audit Other Policy Change Events | Success and Failure |
+| System Auditing | Audit System Integrity | Success and Failure |
+| Process Tracking Auditing | Audit Process Creation | Success |
+| Process Tracking Auditing | Audit Process Termination | Success |
+| Object Access Auditing | Audit File Share | Success and Failure |
+| Object Access Auditing | Audit Other Object Access Events | Success and Failure |
+| Object Access Auditing | Audit Kernel Object | Success and Failure |
+| Object Access Auditing | Audit Detailed File Share | No Auditing |
+| Object Access Auditing | Audit File System | Success and Failure (advisory) |
+| Object Access Auditing | Audit Registry | Success and Failure (advisory) |
+| Network Auditing | NTLM Outgoing Traffic Auditing | Audit all or Deny all |
 
 ### PowerShell Hardening
 
@@ -134,9 +179,12 @@ Each library check returns an object with at minimum:
 
 ASR rule checks also include `ActionLabel` (human-readable action) and `RuleGUID`.
 
+Audit policy checks also include `RequiredSetting` for report display. Optional or advisory audit policy gaps are shown as `REVIEW` rather than `FAIL`.
+
 ## References
 
 - [ASD Essential Eight](https://www.cyber.gov.au/resources-business-and-government/essential-cyber-security/essential-eight)
 - [ASD Essential Eight Maturity Model](https://www.cyber.gov.au/resources-business-and-government/essential-cyber-security/essential-eight/essential-eight-maturity-model)
+- [ASD Windows Event Logging and Forwarding](https://www.cyber.gov.au/business-government/detecting-responding-to-threats/event-logging/windows-event-logging-and-forwarding)
 - [Microsoft ASR Rules Reference](https://learn.microsoft.com/en-us/defender-endpoint/attack-surface-reduction-rules-reference)
 - [Microsoft Defender Antivirus Exclusions](https://learn.microsoft.com/en-us/defender-endpoint/defender-endpoint-antivirus-exclusions)
