@@ -721,3 +721,110 @@ function Get-AutoRunStatus {
         -Description 'Prevents automatic execution of content from removable and other drive types.' `
         -Recommendation 'Set NoDriveTypeAutoRun to 255 through policy to disable AutoRun for all drive types.'
 }
+
+# Checks whether BitLocker Drive Encryption is enabled and actively protecting the
+# operating system drive. Suspended BitLocker is reported as REVIEW because data
+# remains encrypted, but protection is off and should be re-enabled.
+function Get-BitLockerOSDriveStatus {
+    $osDrive = $env:SystemDrive
+
+    try {
+        $vol = Get-BitLockerVolume -MountPoint $osDrive -ErrorAction Stop
+    } catch [System.Management.Automation.CommandNotFoundException] {
+        return ConvertTo-E8AssessmentResult `
+            -Check 'BitLocker OS Drive Encryption' `
+            -Category 'Encryption' `
+            -ML 'ML2' `
+            -Enabled $null `
+            -RawValue $null `
+            -Detail 'BitLocker module unavailable on this edition of Windows.' `
+            -Description 'Checks whether BitLocker Drive Encryption is enabled and actively protecting the OS drive against unauthorised data access if the device is lost or stolen.' `
+            -Recommendation 'Use Windows Pro, Enterprise, or Education; or Windows Server 2012 R2 or later, to access BitLocker Drive Encryption.' `
+            -AdditionalProperties @{ Supported = $false }
+    } catch {
+        Write-Warning "Get-BitLockerOSDriveStatus: $($_.Exception.Message)"
+        return ConvertTo-E8AssessmentResult `
+            -Check 'BitLocker OS Drive Encryption' `
+            -Category 'Encryption' `
+            -ML 'ML2' `
+            -Enabled $false `
+            -RawValue $null `
+            -Detail "Unable to query BitLocker status: $($_.Exception.Message)" `
+            -Description 'Checks whether BitLocker Drive Encryption is enabled and actively protecting the OS drive against unauthorised data access if the device is lost or stolen.' `
+            -Recommendation 'Run the script as administrator and ensure the BitLocker Drive Encryption feature is installed.'
+    }
+
+    $protectionStatus = $vol.ProtectionStatus.ToString()
+    $volumeStatus = $vol.VolumeStatus.ToString()
+    $encryptionPercentage = $vol.EncryptionPercentage
+    $method = if ($vol.EncryptionMethod) { $vol.EncryptionMethod.ToString() } else { 'Unknown' }
+    $enabled = ($protectionStatus -eq 'On' -and $volumeStatus -eq 'FullyEncrypted')
+
+    $result = ConvertTo-E8AssessmentResult `
+        -Check 'BitLocker OS Drive Encryption' `
+        -Category 'Encryption' `
+        -ML 'ML2' `
+        -Enabled $enabled `
+        -RawValue "$protectionStatus/$volumeStatus" `
+        -Detail "Protection: $protectionStatus | Volume: $volumeStatus | Encrypted: $encryptionPercentage% | Method: $method" `
+        -Description 'Checks whether BitLocker Drive Encryption is enabled and actively protecting the OS drive against unauthorised data access if the device is lost or stolen.' `
+        -Recommendation 'Enable BitLocker on the OS drive with a TPM-backed key protector and store the recovery key in Active Directory or Entra ID.'
+
+    if (-not $enabled -and $volumeStatus -ne 'FullyDecrypted') {
+        Add-Member -InputObject $result -NotePropertyName ActionLabel -NotePropertyValue 'Warn'
+    }
+
+    return $result
+}
+
+# Checks whether BitLocker on the OS drive uses a TPM-backed key protector.
+# TPM binding ties decryption to the specific hardware and reduces the risk of
+# the encrypted drive being unlocked on a different machine.
+function Get-BitLockerOSDriveProtectorStatus {
+    $osDrive = $env:SystemDrive
+
+    try {
+        $vol = Get-BitLockerVolume -MountPoint $osDrive -ErrorAction Stop
+    } catch {
+        Write-Warning "Get-BitLockerOSDriveProtectorStatus: $($_.Exception.Message)"
+        return ConvertTo-E8AssessmentResult `
+            -Check 'BitLocker OS Drive TPM Protector' `
+            -Category 'Encryption' `
+            -ML 'ML2' `
+            -Enabled $null `
+            -RawValue $null `
+            -Detail 'Unable to query BitLocker key protectors.' `
+            -Description 'Checks whether BitLocker on the OS drive uses a TPM-backed key protector, ensuring the encrypted drive cannot be unlocked on a different machine.' `
+            -Recommendation 'Enable BitLocker with TPM key protection.' `
+            -AdditionalProperties @{ Supported = $false }
+    }
+
+    if ($vol.VolumeStatus.ToString() -eq 'FullyDecrypted' -and $vol.ProtectionStatus.ToString() -eq 'Off') {
+        return ConvertTo-E8AssessmentResult `
+            -Check 'BitLocker OS Drive TPM Protector' `
+            -Category 'Encryption' `
+            -ML 'ML2' `
+            -Enabled $null `
+            -RawValue 'Not configured' `
+            -Detail 'BitLocker is not enabled; key protector check not applicable.' `
+            -Description 'Checks whether BitLocker on the OS drive uses a TPM-backed key protector, ensuring the encrypted drive cannot be unlocked on a different machine.' `
+            -Recommendation 'Enable BitLocker with a TPM key protector. For high-security systems, use TPM + PIN.' `
+            -AdditionalProperties @{ Supported = $false }
+    }
+
+    $protectorTypes = @($vol.KeyProtector | ForEach-Object { $_.KeyProtectorType.ToString() })
+    $hasTpm = @($protectorTypes | Where-Object {
+            $_ -in @('Tpm', 'TpmPin', 'TpmStartupKey', 'TpmNetworkKey', 'TpmPinStartupKey')
+        }).Count -gt 0
+    $protectorList = if ($protectorTypes.Count -gt 0) { $protectorTypes -join ', ' } else { 'None' }
+
+    ConvertTo-E8AssessmentResult `
+        -Check 'BitLocker OS Drive TPM Protector' `
+        -Category 'Encryption' `
+        -ML 'ML2' `
+        -Enabled $hasTpm `
+        -RawValue $protectorList `
+        -Detail "Key protectors: $protectorList" `
+        -Description 'Checks whether BitLocker on the OS drive uses a TPM-backed key protector, ensuring the encrypted drive cannot be unlocked on a different machine using only the recovery key.' `
+        -Recommendation 'Configure BitLocker with a TPM protector. For higher-assurance environments, add a PIN (TPM + PIN) to require pre-boot authentication.'
+}

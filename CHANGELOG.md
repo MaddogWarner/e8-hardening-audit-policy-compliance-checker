@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented here.
 
+## [0.5.0] - 2026-05-20
+
+### Added
+
+- `Get-BitLockerOSDriveStatus` in `essential8compliancecheck.ps1` to check whether BitLocker Drive Encryption is enabled and actively protecting the OS drive. It distinguishes fully encrypted and active drives (`PASS`), fully decrypted drives (`FAIL`), and suspended or partially encrypted states (`REVIEW`).
+- `Get-BitLockerOSDriveProtectorStatus` in `essential8compliancecheck.ps1` to check whether the OS drive BitLocker configuration uses a TPM-backed key protector for hardware binding. It skips the check (`NOT SUPPORTED`) if BitLocker is not configured on the drive.
+- `Encryption` category for BitLocker-related checks in GUI results and markdown reports.
+
+### Changed
+
+- `Get-E8CheckCommand` in `starthere.ps1` now includes `Get-BitLockerOSDriveStatus` and `Get-BitLockerOSDriveProtectorStatus`, bringing the E8 scan to 25 checks.
+- Bumped tool version to `0.5.0`.
+
+### Validation
+
+- PowerShell parser validation passed for `starthere.ps1` and `essential8compliancecheck.ps1`.
+- PSScriptAnalyzer returned no findings for `starthere.ps1` and `essential8compliancecheck.ps1`.
+- Windows GUI execution and end-to-end BitLocker validation remain pending because the implementation workspace is not a Windows host.
+
 ## [0.4.0] - 2026-05-19
 
 ### Added

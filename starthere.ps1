@@ -3,7 +3,7 @@ param()
 
 Set-StrictMode -Version Latest
 
-$script:ToolVersion = '0.4.0'
+$script:ToolVersion = '0.5.0'
 $script:AssessmentResults = New-Object System.Collections.ArrayList
 $script:AuditPolicyResults = New-Object System.Collections.ArrayList
 $script:AuditPolCache = $null
@@ -124,6 +124,8 @@ function Get-E8CheckCommand {
         'Get-UACStatus'
         'Get-SecureBootStatus'
         'Get-AutoRunStatus'
+        'Get-BitLockerOSDriveStatus'
+        'Get-BitLockerOSDriveProtectorStatus'
     )
 }
 

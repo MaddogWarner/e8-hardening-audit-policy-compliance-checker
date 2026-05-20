@@ -51,6 +51,13 @@ The current assessment workflow is audit-only - it makes no changes to system se
 | Memory Integrity / HVCI | Hypervisor-Protected Code Integrity active at runtime (Win 10 1709+ / Server 2019+) |
 | Credential Guard | VBS-based Credential Guard running, protecting domain credential hashes |
 
+### Encryption
+
+| Check | What it looks for |
+|---|---|
+| BitLocker OS Drive Encryption | BitLocker enabled, fully encrypted, and actively protecting the OS drive. Suspended or partially encrypted states show as `REVIEW`; fully decrypted drives show as `FAIL`; unavailable BitLocker support shows as `NOT SUPPORTED` |
+| BitLocker OS Drive TPM Protector | TPM-backed key protector present for the OS drive. Skipped as `NOT SUPPORTED` if BitLocker is not configured on the drive |
+
 ### Audit Logging
 
 | Check | What it looks for |
@@ -186,5 +193,7 @@ Audit policy checks also include `RequiredSetting` for report display. Optional 
 - [ASD Essential Eight](https://www.cyber.gov.au/resources-business-and-government/essential-cyber-security/essential-eight)
 - [ASD Essential Eight Maturity Model](https://www.cyber.gov.au/resources-business-and-government/essential-cyber-security/essential-eight/essential-eight-maturity-model)
 - [ASD Windows Event Logging and Forwarding](https://www.cyber.gov.au/business-government/detecting-responding-to-threats/event-logging/windows-event-logging-and-forwarding)
+- [ACSC Hardening Microsoft Windows 10 version 21H1 Workstations](https://www.cyber.gov.au/resources-business-and-government/maintaining-devices-and-systems/system-hardening-and-administration/system-hardening/hardening-microsoft-windows-10-version-21h1-workstations)
 - [Microsoft ASR Rules Reference](https://learn.microsoft.com/en-us/defender-endpoint/attack-surface-reduction-rules-reference)
+- [Microsoft BitLocker Overview](https://learn.microsoft.com/en-us/windows/security/operating-system-security/data-protection/bitlocker/)
 - [Microsoft Defender Antivirus Exclusions](https://learn.microsoft.com/en-us/defender-endpoint/defender-endpoint-antivirus-exclusions)
