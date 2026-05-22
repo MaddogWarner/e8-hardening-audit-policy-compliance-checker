@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented here.
 
+## [0.5.2] - 2026-05-22
+
+### Fixed
+
+- `Set-StrictMode -Version Latest` was causing all registry checks in `essential8compliancecheck.ps1` to fail with "The property 'X' cannot be found on this object" whenever the registry key exists but the named value is absent. The pattern `(Get-ItemProperty -Name 'X').X` returns the key object without the property in that case; StrictMode then throws `PropertyNotFoundException`. Replaced all 15 occurrences with `Get-ItemPropertyValue -ErrorAction SilentlyContinue`, which returns `$null` cleanly when the key or value is absent. Also replaced the `Get-RDPNLAStatus` multi-property read pattern (`$rdpTcp.UserAuthentication`, `$rdpTcp.UserAuthenticationEnabled`) with two separate `Get-ItemPropertyValue` calls for the same reason.
+
+### Changed
+
+- Bumped tool version to `0.5.2`.
+
 ## [0.5.1] - 2026-05-22
 
 ### Fixed

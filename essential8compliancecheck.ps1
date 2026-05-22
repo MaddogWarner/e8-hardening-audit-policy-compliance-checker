@@ -71,8 +71,8 @@ function ConvertTo-E8ValueText {
 # Checks whether LSASS is configured to run as a Protected Process Light (PPL),
 # preventing code injection and memory dumping by non-protected processes.
 function Get-LsaProtectionStatus {
-    $val = (Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' `
-        -Name 'RunAsPPL' -ErrorAction SilentlyContinue).RunAsPPL
+    $val = Get-ItemPropertyValue -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' `
+        -Name 'RunAsPPL' -ErrorAction SilentlyContinue
 
     ConvertTo-E8AssessmentResult `
         -Check 'LSASS Protected Process Light (PPL)' `
@@ -120,9 +120,9 @@ function Get-MemoryIntegrityStatus {
             -AdditionalProperties @{ Supported = $false }
     }
 
-    $configuredValue = (Get-ItemProperty `
+    $configuredValue = Get-ItemPropertyValue `
         -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard\Scenarios\HypervisorEnforcedCodeIntegrity' `
-        -Name 'Enabled' -ErrorAction SilentlyContinue).Enabled
+        -Name 'Enabled' -ErrorAction SilentlyContinue
 
     try {
         $dg = Get-CimInstance -ClassName Win32_DeviceGuard `
@@ -202,8 +202,8 @@ function Get-CredentialGuardStatus {
             -AdditionalProperties @{ Supported = $true }
     } catch {
         Write-Warning "Win32_DeviceGuard unavailable, falling back to registry: $_"
-        $val = (Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' `
-            -Name 'LsaCfgFlags' -ErrorAction SilentlyContinue).LsaCfgFlags
+        $val = Get-ItemPropertyValue -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' `
+            -Name 'LsaCfgFlags' -ErrorAction SilentlyContinue
         ConvertTo-E8AssessmentResult `
             -Check 'Credential Guard' `
             -Category 'Memory Protection' `
@@ -219,9 +219,9 @@ function Get-CredentialGuardStatus {
 
 # Checks whether full command-line arguments are captured in process creation audit events.
 function Get-ProcessCmdLineAuditStatus {
-    $val = (Get-ItemProperty `
+    $val = Get-ItemPropertyValue `
         -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System\Audit' `
-        -Name 'ProcessCreationIncludeCmdLine_Enabled' -ErrorAction SilentlyContinue).ProcessCreationIncludeCmdLine_Enabled
+        -Name 'ProcessCreationIncludeCmdLine_Enabled' -ErrorAction SilentlyContinue
 
     ConvertTo-E8AssessmentResult `
         -Check 'Process Creation Command Line Logging' `
@@ -236,9 +236,9 @@ function Get-ProcessCmdLineAuditStatus {
 
 # Checks whether PowerShell Script Block Logging is enabled.
 function Get-PSScriptBlockLoggingStatus {
-    $val = (Get-ItemProperty `
+    $val = Get-ItemPropertyValue `
         -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging' `
-        -Name 'EnableScriptBlockLogging' -ErrorAction SilentlyContinue).EnableScriptBlockLogging
+        -Name 'EnableScriptBlockLogging' -ErrorAction SilentlyContinue
 
     ConvertTo-E8AssessmentResult `
         -Check 'PowerShell Script Block Logging' `
@@ -253,9 +253,9 @@ function Get-PSScriptBlockLoggingStatus {
 
 # Checks whether PowerShell Module Logging is enabled.
 function Get-PSModuleLoggingStatus {
-    $val = (Get-ItemProperty `
+    $val = Get-ItemPropertyValue `
         -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\ModuleLogging' `
-        -Name 'EnableModuleLogging' -ErrorAction SilentlyContinue).EnableModuleLogging
+        -Name 'EnableModuleLogging' -ErrorAction SilentlyContinue
 
     ConvertTo-E8AssessmentResult `
         -Check 'PowerShell Module Logging' `
@@ -270,9 +270,9 @@ function Get-PSModuleLoggingStatus {
 
 # Checks whether PowerShell Transcription is enabled.
 function Get-PSTranscriptionStatus {
-    $val = (Get-ItemProperty `
+    $val = Get-ItemPropertyValue `
         -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\PowerShell\Transcription' `
-        -Name 'EnableTranscripting' -ErrorAction SilentlyContinue).EnableTranscripting
+        -Name 'EnableTranscripting' -ErrorAction SilentlyContinue
 
     ConvertTo-E8AssessmentResult `
         -Check 'PowerShell Transcription' `
@@ -316,9 +316,9 @@ function Get-PowerShellV2Status {
 # Checks whether this PowerShell session is running under Constrained Language Mode.
 function Get-PSConstrainedLanguageModeStatus {
     $languageMode = $ExecutionContext.SessionState.LanguageMode
-    $lockdownPolicy = (Get-ItemProperty `
+    $lockdownPolicy = Get-ItemPropertyValue `
         -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment' `
-        -Name '__PSLockdownPolicy' -ErrorAction SilentlyContinue).__PSLockdownPolicy
+        -Name '__PSLockdownPolicy' -ErrorAction SilentlyContinue
 
     ConvertTo-E8AssessmentResult `
         -Check 'PowerShell Constrained Language Mode' `
@@ -410,9 +410,9 @@ function Get-DefenderCloudProtectionStatus {
 
 # Checks whether Defender Tamper Protection is active.
 function Get-DefenderTamperProtectionStatus {
-    $val = (Get-ItemProperty `
+    $val = Get-ItemPropertyValue `
         -Path 'HKLM:\SOFTWARE\Microsoft\Windows Defender\Features' `
-        -Name 'TamperProtection' -ErrorAction SilentlyContinue).TamperProtection
+        -Name 'TamperProtection' -ErrorAction SilentlyContinue
 
     ConvertTo-E8AssessmentResult `
         -Check 'Defender Tamper Protection' `
@@ -604,9 +604,9 @@ function Get-FirewallProfileStatus {
 
 # Checks whether Network Level Authentication is required for RDP connections.
 function Get-RDPNLAStatus {
-    $rdpDisabled = (Get-ItemProperty `
+    $rdpDisabled = Get-ItemPropertyValue `
         -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server' `
-        -Name 'fDenyTSConnections' -ErrorAction SilentlyContinue).fDenyTSConnections
+        -Name 'fDenyTSConnections' -ErrorAction SilentlyContinue
 
     if ($rdpDisabled -eq 1) {
         return ConvertTo-E8AssessmentResult `
@@ -621,17 +621,10 @@ function Get-RDPNLAStatus {
             -AdditionalProperties @{ Note = 'RDP is disabled; check not applicable' }
     }
 
-    $rdpTcp = Get-ItemProperty `
-        -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
-        -ErrorAction SilentlyContinue
-
-    $nla = if ($null -ne $rdpTcp.UserAuthentication) {
-        $rdpTcp.UserAuthentication
-    } elseif ($null -ne $rdpTcp.UserAuthenticationEnabled) {
-        $rdpTcp.UserAuthenticationEnabled
-    } else {
-        $null
-    }
+    $nlaPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp'
+    $nlaAuth        = Get-ItemPropertyValue -Path $nlaPath -Name 'UserAuthentication'        -ErrorAction SilentlyContinue
+    $nlaAuthEnabled = Get-ItemPropertyValue -Path $nlaPath -Name 'UserAuthenticationEnabled' -ErrorAction SilentlyContinue
+    $nla = if ($null -ne $nlaAuth) { $nlaAuth } elseif ($null -ne $nlaAuthEnabled) { $nlaAuthEnabled } else { $null }
 
     ConvertTo-E8AssessmentResult `
         -Check 'RDP Network Level Authentication (NLA)' `
@@ -646,9 +639,9 @@ function Get-RDPNLAStatus {
 
 # Checks whether WDigest authentication is disabled.
 function Get-WDigestStatus {
-    $val = (Get-ItemProperty `
+    $val = Get-ItemPropertyValue `
         -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\WDigest' `
-        -Name 'UseLogonCredential' -ErrorAction SilentlyContinue).UseLogonCredential
+        -Name 'UseLogonCredential' -ErrorAction SilentlyContinue
 
     ConvertTo-E8AssessmentResult `
         -Check 'WDigest Plaintext Credential Caching Disabled' `
@@ -663,9 +656,9 @@ function Get-WDigestStatus {
 
 # Checks whether User Account Control is enabled.
 function Get-UACStatus {
-    $val = (Get-ItemProperty `
+    $val = Get-ItemPropertyValue `
         -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' `
-        -Name 'EnableLUA' -ErrorAction SilentlyContinue).EnableLUA
+        -Name 'EnableLUA' -ErrorAction SilentlyContinue
 
     ConvertTo-E8AssessmentResult `
         -Check 'User Account Control (UAC) Enabled' `
@@ -707,9 +700,9 @@ function Get-SecureBootStatus {
 
 # Checks whether AutoRun is disabled for all drive types.
 function Get-AutoRunStatus {
-    $val = (Get-ItemProperty `
+    $val = Get-ItemPropertyValue `
         -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer' `
-        -Name 'NoDriveTypeAutoRun' -ErrorAction SilentlyContinue).NoDriveTypeAutoRun
+        -Name 'NoDriveTypeAutoRun' -ErrorAction SilentlyContinue
 
     ConvertTo-E8AssessmentResult `
         -Check 'AutoRun Disabled (All Drives)' `
