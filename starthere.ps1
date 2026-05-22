@@ -3,7 +3,7 @@ param()
 
 Set-StrictMode -Version Latest
 
-$script:ToolVersion = '0.5.0'
+$script:ToolVersion = '0.5.1'
 $script:AssessmentResults = New-Object System.Collections.ArrayList
 $script:AuditPolicyResults = New-Object System.Collections.ArrayList
 $script:AuditPolCache = $null
@@ -46,20 +46,6 @@ function Start-ElevatedScript {
     }
 }
 
-function Import-AssessmentLibrary {
-    $scriptRoot = Split-Path -Parent $PSCommandPath
-    $essentialEightLibrary = Join-Path -Path $scriptRoot -ChildPath 'essential8compliancecheck.ps1'
-    $mdeExclusionsLibrary = Join-Path -Path $scriptRoot -ChildPath 'mdeexclusionsassess.ps1'
-    $auditPolicyLibrary = Join-Path -Path $scriptRoot -ChildPath 'auditpolicyassess.ps1'
-
-    foreach ($library in @($essentialEightLibrary, $mdeExclusionsLibrary, $auditPolicyLibrary)) {
-        if (-not (Test-Path -Path $library -PathType Leaf)) {
-            throw "Required assessment library not found: $library"
-        }
-
-        . $library
-    }
-}
 
 function Get-SystemInfo {
     try {
@@ -604,24 +590,24 @@ function Show-StartHereForm {
     $buttonPanel.Anchor = 'Bottom,Left,Right'
 
     $runScanButton = New-Object System.Windows.Forms.Button
-    $runScanButton.Text = 'Run Scan'
-    $runScanButton.Size = New-Object System.Drawing.Size(110, 32)
+    $runScanButton.Text = 'Run E8 Scan'
+    $runScanButton.Size = New-Object System.Drawing.Size(130, 32)
     $runScanButton.Location = New-Object System.Drawing.Point(0, 2)
 
     $mdeButton = New-Object System.Windows.Forms.Button
-    $mdeButton.Text = 'MDE Exclusions'
-    $mdeButton.Size = New-Object System.Drawing.Size(130, 32)
-    $mdeButton.Location = New-Object System.Drawing.Point(120, 2)
+    $mdeButton.Text = 'MDE Exclusions List'
+    $mdeButton.Size = New-Object System.Drawing.Size(165, 32)
+    $mdeButton.Location = New-Object System.Drawing.Point(140, 2)
 
     $auditPolicyButton = New-Object System.Windows.Forms.Button
     $auditPolicyButton.Text = 'Audit Policy'
     $auditPolicyButton.Size = New-Object System.Drawing.Size(115, 32)
-    $auditPolicyButton.Location = New-Object System.Drawing.Point(260, 2)
+    $auditPolicyButton.Location = New-Object System.Drawing.Point(315, 2)
 
     $saveButton = New-Object System.Windows.Forms.Button
     $saveButton.Text = 'Save Report'
     $saveButton.Size = New-Object System.Drawing.Size(110, 32)
-    $saveButton.Location = New-Object System.Drawing.Point(385, 2)
+    $saveButton.Location = New-Object System.Drawing.Point(440, 2)
     $saveButton.Enabled = $false
 
     $closeButton = New-Object System.Windows.Forms.Button
@@ -847,5 +833,12 @@ if (-not (Test-IsAdministrator)) {
     return
 }
 
-Import-AssessmentLibrary
+$scriptRoot = Split-Path -Parent $PSCommandPath
+foreach ($library in @('essential8compliancecheck.ps1', 'mdeexclusionsassess.ps1', 'auditpolicyassess.ps1')) {
+    $libraryPath = Join-Path -Path $scriptRoot -ChildPath $library
+    if (-not (Test-Path -Path $libraryPath -PathType Leaf)) {
+        throw "Required assessment library not found: $libraryPath"
+    }
+    . $libraryPath
+}
 Show-StartHereForm

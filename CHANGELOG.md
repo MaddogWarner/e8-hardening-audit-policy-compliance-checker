@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented here.
 
+## [0.5.1] - 2026-05-22
+
+### Fixed
+
+- Dot-source scoping bug in `starthere.ps1`: `Import-AssessmentLibrary` was dot-sourcing the three library scripts inside a function, loading all library function definitions into that function's local scope. When the function returned, those definitions were gone, causing the Run Scan, MDE Exclusions, and Audit Policy buttons to fail with "term not recognised" errors. Fixed by removing `Import-AssessmentLibrary` and dot-sourcing the libraries at script scope directly.
+
+### Changed
+
+- "Run Scan" button renamed to "Run E8 Scan".
+- "MDE Exclusions" button renamed to "MDE Exclusions List".
+- Button widths and X-positions adjusted to accommodate the new labels without clipping.
+- Bumped tool version to `0.5.1`.
+
 ## [0.5.0] - 2026-05-20
 
 ### Added
