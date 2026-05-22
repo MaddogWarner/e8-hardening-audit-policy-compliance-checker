@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented here.
 
+## [0.5.3] - 2026-05-22
+
+### Fixed
+
+- `Get-ItemPropertyValue` throws a terminating exception in PowerShell 5.1 when the registry path exists but the named value is absent — `-ErrorAction SilentlyContinue` only suppresses non-terminating errors and cannot catch it. This caused the E8 scan to show "Scan Failed" immediately on hosts where controls such as LSASS PPL, Script Block Logging, or Tamper Protection are not configured. Added a private helper `Get-RegistryPropertyValue` that wraps `Get-ItemPropertyValue` in `try/catch` and returns `$null` cleanly when the value is absent. Replaced all 15 `Get-ItemPropertyValue ... -ErrorAction SilentlyContinue` call sites in `essential8compliancecheck.ps1` with this helper.
+- MDE Exclusions Detail column showed `0 - No risky path pattern matched` instead of the actual exclusion path. Windows Defender stores the exclusion path or process name as the registry value **name** and `0` (DWORD) as the value data; `GetValue()` can return `"0"` as a string, causing the value data to be used as the exclusion display value. Fixed `ExclusionValue` in `Get-DefenderExclusionRegistryEntry` to always use the value name. Simplified the `Detail` field to show the exclusion value only — the existing REVIEW (yellow) / HIGH RISK (red) colour coding already communicates risk level.
+
+### Changed
+
+- Bumped tool version to `0.5.3`.
+
 ## [0.5.2] - 2026-05-22
 
 ### Fixed

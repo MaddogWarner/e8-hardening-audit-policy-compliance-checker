@@ -66,11 +66,7 @@ function Get-DefenderExclusionRegistryEntry {
 
             foreach ($valueName in $valueNames) {
                 $valueData = $registryKey.GetValue($valueName)
-                $exclusionValue = if ($valueData -is [string] -and -not [string]::IsNullOrWhiteSpace($valueData)) {
-                    $valueData
-                } else {
-                    $valueName
-                }
+                $exclusionValue = $valueName
 
                 [PSCustomObject]@{
                     Source         = $target.Source
@@ -213,7 +209,7 @@ function Get-MdeExclusionAssessment {
             RegistryPath     = $entry.RegistryPath
             RegistryValue    = $entry.ValueName
             RegistryData     = $entry.ValueData
-            Detail           = "$($entry.ExclusionValue) - $($risk.Reason)"
+            Detail           = $entry.ExclusionValue
             Description      = 'Inventories Microsoft Defender Antivirus exclusions and highlights broad exclusions that create avoidable detection blind spots.'
             Recommendation   = 'Validate the business need, scope the exclusion as narrowly as possible, and remove exclusions covering user profiles, temporary folders, or drive roots.'
         }
