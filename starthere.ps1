@@ -3,7 +3,7 @@ param()
 
 Set-StrictMode -Version Latest
 
-$script:ToolVersion = '0.5.3'
+$script:ToolVersion = '0.5.4'
 $script:AssessmentResults = New-Object System.Collections.ArrayList
 $script:AuditPolicyResults = New-Object System.Collections.ArrayList
 $script:AuditPolCache = $null
@@ -454,6 +454,174 @@ function Save-MarkdownReport {
     return $true
 }
 
+function ConvertTo-CsvSafeString {
+    param([AllowNull()][object]$Value)
+    if ($null -eq $Value) { return '' }
+    if ($Value -is [System.Collections.IEnumerable] -and $Value -isnot [string]) {
+        return ($Value | ForEach-Object { [string]$_ }) -join '; '
+    }
+    return ([string]$Value).Replace("`r`n", ' ').Replace("`r", ' ').Replace("`n", ' ')
+}
+
+function Get-CsvReport {
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$SystemInfo,
+
+        [Parameter(Mandatory = $true)]
+        [object[]]$Results,
+
+        [object[]]$AuditPolicyResults = @()
+    )
+
+    $reportDate = Get-ReportTimestamp
+    $hostname   = ConvertTo-CsvSafeString $SystemInfo.Hostname
+    $ip         = ConvertTo-CsvSafeString $SystemInfo.IPAddress
+    $user       = ConvertTo-CsvSafeString $SystemInfo.LoggedInUser
+    $domain     = ConvertTo-CsvSafeString $SystemInfo.Domain
+    $osName     = ConvertTo-CsvSafeString $SystemInfo.OSName
+    $osBuild    = ConvertTo-CsvSafeString $SystemInfo.OSBuild
+    $lastPatch  = ConvertTo-CsvSafeString $SystemInfo.LastPatch
+
+    $rows = New-Object System.Collections.Generic.List[PSCustomObject]
+
+    $e8Results = @($Results | Where-Object {
+        $_.Category -ne 'MDE Exclusions' -and
+        $_.PSObject.Properties.Name -notcontains 'RequiredSetting'
+    })
+    foreach ($r in $e8Results) {
+        $status = Get-AssessmentStatus -Result $r
+        $rows.Add([PSCustomObject][ordered]@{
+            ReportDate          = $reportDate
+            Hostname            = $hostname
+            IPAddress           = $ip
+            LoggedInUser        = $user
+            Domain              = $domain
+            OSName              = $osName
+            OSBuild             = $osBuild
+            LastPatch           = $lastPatch
+            AssessmentType      = 'E8'
+            Category            = ConvertTo-CsvSafeString $r.Category
+            Check               = ConvertTo-CsvSafeString $r.Check
+            ML                  = if ($r.ML) { $r.ML } else { '' }
+            Status              = $status
+            Enabled             = if ($null -eq $r.Enabled) { '' } else { [string]$r.Enabled }
+            RawValue            = ConvertTo-CsvSafeString $r.RawValue
+            Detail              = ConvertTo-CsvSafeString $r.Detail
+            Description         = ConvertTo-CsvSafeString $r.Description
+            Recommendation      = ConvertTo-CsvSafeString $r.Recommendation
+            Supported           = if ($r.PSObject.Properties.Name -contains 'Supported') { [string]$r.Supported } else { '' }
+            RequiredSetting     = ''
+            ActionLabel         = if ($r.PSObject.Properties.Name -contains 'ActionLabel') { ConvertTo-CsvSafeString $r.ActionLabel } else { '' }
+            MDE_Source          = ''
+            MDE_ExclusionType   = ''
+            MDE_ExclusionValue  = ''
+            MDE_Alert           = ''
+            MDE_Reason          = ''
+            MDE_NormalisedValue = ''
+        })
+    }
+
+    $mdeResults = @($Results | Where-Object { $_.Category -eq 'MDE Exclusions' })
+    foreach ($r in $mdeResults) {
+        $status = Get-AssessmentStatus -Result $r
+        $rows.Add([PSCustomObject][ordered]@{
+            ReportDate          = $reportDate
+            Hostname            = $hostname
+            IPAddress           = $ip
+            LoggedInUser        = $user
+            Domain              = $domain
+            OSName              = $osName
+            OSBuild             = $osBuild
+            LastPatch           = $lastPatch
+            AssessmentType      = 'MDE'
+            Category            = ConvertTo-CsvSafeString $r.Category
+            Check               = ConvertTo-CsvSafeString $r.Check
+            ML                  = ''
+            Status              = $status
+            Enabled             = ''
+            RawValue            = ''
+            Detail              = ConvertTo-CsvSafeString $r.Detail
+            Description         = ConvertTo-CsvSafeString $r.Description
+            Recommendation      = ConvertTo-CsvSafeString $r.Recommendation
+            Supported           = ''
+            RequiredSetting     = ''
+            ActionLabel         = ''
+            MDE_Source          = ConvertTo-CsvSafeString $r.Source
+            MDE_ExclusionType   = ConvertTo-CsvSafeString $r.ExclusionType
+            MDE_ExclusionValue  = ConvertTo-CsvSafeString $r.ExclusionValue
+            MDE_Alert           = if ($null -eq $r.Alert) { '' } else { [string]$r.Alert }
+            MDE_Reason          = ConvertTo-CsvSafeString $r.Reason
+            MDE_NormalisedValue = ConvertTo-CsvSafeString $r.NormalisedValue
+        })
+    }
+
+    foreach ($r in $AuditPolicyResults) {
+        $status = Get-AssessmentStatus -Result $r
+        $rows.Add([PSCustomObject][ordered]@{
+            ReportDate          = $reportDate
+            Hostname            = $hostname
+            IPAddress           = $ip
+            LoggedInUser        = $user
+            Domain              = $domain
+            OSName              = $osName
+            OSBuild             = $osBuild
+            LastPatch           = $lastPatch
+            AssessmentType      = 'AuditPolicy'
+            Category            = ConvertTo-CsvSafeString $r.Category
+            Check               = ConvertTo-CsvSafeString $r.Check
+            ML                  = if ($r.ML) { $r.ML } else { '' }
+            Status              = $status
+            Enabled             = if ($null -eq $r.Enabled) { '' } else { [string]$r.Enabled }
+            RawValue            = ConvertTo-CsvSafeString $r.RawValue
+            Detail              = ConvertTo-CsvSafeString $r.Detail
+            Description         = ConvertTo-CsvSafeString $r.Description
+            Recommendation      = ConvertTo-CsvSafeString $r.Recommendation
+            Supported           = if ($r.PSObject.Properties.Name -contains 'Supported') { [string]$r.Supported } else { '' }
+            RequiredSetting     = ConvertTo-CsvSafeString $r.RequiredSetting
+            ActionLabel         = if ($r.PSObject.Properties.Name -contains 'ActionLabel') { ConvertTo-CsvSafeString $r.ActionLabel } else { '' }
+            MDE_Source          = ''
+            MDE_ExclusionType   = ''
+            MDE_ExclusionValue  = ''
+            MDE_Alert           = ''
+            MDE_Reason          = ''
+            MDE_NormalisedValue = ''
+        })
+    }
+
+    return $rows
+}
+
+function Save-CsvReport {
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$SystemInfo,
+
+        [Parameter(Mandatory = $true)]
+        [object[]]$Results,
+
+        [object[]]$AuditPolicyResults = @()
+    )
+
+    $dialog = New-Object System.Windows.Forms.SaveFileDialog
+    $date     = Get-Date -Format 'yyyyMMdd'
+    $hostname = if ($SystemInfo.Hostname) { $SystemInfo.Hostname } else { 'UnknownHost' }
+    $dialog.FileName = "E8-Report-$hostname-$date.csv"
+    $dialog.Filter   = 'CSV files (*.csv)|*.csv|All files (*.*)|*.*'
+    $dialog.Title    = 'Save Assessment Report as CSV'
+
+    if ($dialog.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) {
+        return $false
+    }
+
+    $rows    = Get-CsvReport -SystemInfo $SystemInfo -Results $Results -AuditPolicyResults $AuditPolicyResults
+    $csvText = $rows | ConvertTo-Csv -NoTypeInformation
+    # UTF-8 with BOM — Excel on Windows requires BOM to auto-detect encoding without an import wizard
+    $encoding = New-Object System.Text.UTF8Encoding($true)
+    [System.IO.File]::WriteAllLines($dialog.FileName, $csvText, $encoding)
+    return $true
+}
+
 function Show-StartHereForm {
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
@@ -610,6 +778,19 @@ function Show-StartHereForm {
     $saveButton.Location = New-Object System.Drawing.Point(440, 2)
     $saveButton.Enabled = $false
 
+    $radioMd = New-Object System.Windows.Forms.RadioButton
+    $radioMd.Text     = 'MD'
+    $radioMd.Size     = New-Object System.Drawing.Size(50, 20)
+    $radioMd.Location = New-Object System.Drawing.Point(560, 9)
+    $radioMd.Checked  = $true
+    $radioMd.Font     = New-Object System.Drawing.Font('Segoe UI', 9)
+
+    $radioCsv = New-Object System.Windows.Forms.RadioButton
+    $radioCsv.Text     = 'CSV'
+    $radioCsv.Size     = New-Object System.Drawing.Size(55, 20)
+    $radioCsv.Location = New-Object System.Drawing.Point(614, 9)
+    $radioCsv.Font     = New-Object System.Drawing.Font('Segoe UI', 9)
+
     $closeButton = New-Object System.Windows.Forms.Button
     $closeButton.Text = 'Close'
     $closeButton.Size = New-Object System.Drawing.Size(90, 32)
@@ -617,7 +798,7 @@ function Show-StartHereForm {
     $closeButton.Anchor = 'Top,Right'
     $closeButton.Add_Click({ $form.Close() })
 
-    $buttonPanel.Controls.AddRange(@($runScanButton, $mdeButton, $auditPolicyButton, $saveButton, $closeButton))
+    $buttonPanel.Controls.AddRange(@($runScanButton, $mdeButton, $auditPolicyButton, $saveButton, $radioMd, $radioCsv, $closeButton))
 
     $runScanButton.Add_Click({
         try {
@@ -806,8 +987,14 @@ function Show-StartHereForm {
             return
         }
 
-        if (Save-MarkdownReport -SystemInfo $script:SystemInfo -Results @($script:AssessmentResults) -AuditPolicyResults @($script:AuditPolicyResults)) {
-            $statusLabel.Text = 'Report saved'
+        if ($radioCsv.Checked) {
+            if (Save-CsvReport -SystemInfo $script:SystemInfo -Results @($script:AssessmentResults) -AuditPolicyResults @($script:AuditPolicyResults)) {
+                $statusLabel.Text = 'Report saved (CSV)'
+            }
+        } else {
+            if (Save-MarkdownReport -SystemInfo $script:SystemInfo -Results @($script:AssessmentResults) -AuditPolicyResults @($script:AuditPolicyResults)) {
+                $statusLabel.Text = 'Report saved (Markdown)'
+            }
         }
     })
 

@@ -1,6 +1,11 @@
 # ASD Essential Eight Hardening Compliance Tool
 
-A read-only PowerShell and Windows Forms tool that assesses Windows OS and application hardening controls against the [ASD Essential Eight](https://www.cyber.gov.au/resources-business-and-government/essential-cyber-security/essential-eight) maturity model. The GUI runs checks inline, surfaces Microsoft Defender Antivirus exclusion risks, and can export a markdown report.
+A read-only PowerShell and Windows Forms tool that assesses Windows OS and application hardening controls against the [ASD Essential Eight](https://www.cyber.gov.au/resources-business-and-government/essential-cyber-security/essential-eight) maturity model. The GUI runs checks inline, surfaces Microsoft Defender Antivirus exclusion risks, and can export results as a markdown report or a flat CSV suitable for Power BI and Excel dashboards.
+
+## Use Cases
+
+- **Point-in-time compliance assessment** — run against a live host to get an immediate snapshot of its Essential Eight hardening posture. Useful for periodic reviews or before/after change windows.
+- **SOE / Golden Image validation** — run against a workstation or server image before it is committed to production to confirm hardening controls are in place before wide deployment.
 
 ## Requirements
 
@@ -23,7 +28,9 @@ The GUI provides:
 - `Run Scan` - runs the Essential Eight hardening checks and populates results in the GUI.
 - `MDE Exclusions` - inventories Microsoft Defender Antivirus exclusions and highlights obviously risky exclusions.
 - `Audit Policy` - assesses local Windows Advanced Audit Policy and event log size settings against ASD Windows Event Logging and Forwarding guidance.
-- `Save Report` - exports the current results to a UTF-8 markdown report.
+- `Save Report` - exports the current results. Use the **MD / CSV** radio buttons immediately to the right of the button to choose the output format before saving:
+  - **MD** (default) — UTF-8 markdown report, structured for readability and LLM ingestion.
+  - **CSV** — flat UTF-8 CSV with one row per check result, structured for Power BI and Excel dashboards. All three assessment types (E8 hardening, MDE exclusions, Audit Policy) are exported into a single file with an `AssessmentType` column as the primary slicer.
 
 `essential8compliancecheck.ps1`, `mdeexclusionsassess.ps1`, and `auditpolicyassess.ps1` are dot-sourced function libraries used by the GUI. They are not standalone report runners in the current architecture.
 
@@ -33,7 +40,7 @@ The current assessment workflow is audit-only - it makes no changes to system se
 
 | File | Purpose |
 |---|---|
-| `starthere.ps1` | Windows Forms GUI, self-elevation entry point, scan orchestration, system information collection, and markdown report generation |
+| `starthere.ps1` | Windows Forms GUI, self-elevation entry point, scan orchestration, system information collection, and markdown and CSV report generation |
 | `essential8compliancecheck.ps1` | Essential Eight hardening control function library |
 | `mdeexclusionsassess.ps1` | Microsoft Defender Antivirus exclusion inventory and risk assessment function library |
 | `auditpolicyassess.ps1` | ASD Windows Audit Policy and event log configuration assessment function library |
@@ -187,6 +194,42 @@ Each library check returns an object with at minimum:
 ASR rule checks also include `ActionLabel` (human-readable action) and `RuleGUID`.
 
 Audit policy checks also include `RequiredSetting` for report display. Optional or advisory audit policy gaps are shown as `REVIEW` rather than `FAIL`.
+
+## CSV Export Schema
+
+When saving in CSV format, the export produces one row per check result across all three assessment types. Every row includes system context so the file is self-contained when loaded into Power BI or Excel.
+
+| Column | Type | Description |
+| --- | --- | --- |
+| `ReportDate` | string | Timestamp the report was generated (AEST/AEDT) |
+| `Hostname` | string | Host the tool was run on |
+| `IPAddress` | string | Primary IPv4 address |
+| `LoggedInUser` | string | Account that ran the tool |
+| `Domain` | string | Domain or workgroup membership |
+| `OSName` | string | Windows edition name |
+| `OSBuild` | string | OS build number |
+| `LastPatch` | string | Date of the most recently installed update |
+| `AssessmentType` | string | `E8`, `MDE`, or `AuditPolicy` — primary slicer |
+| `Category` | string | Grouping label (e.g. `Memory Protection`, `MDE Exclusions`) |
+| `Check` | string | Individual check name |
+| `ML` | string | ASD maturity level (`ML1`–`ML3`); blank for MDE rows |
+| `Status` | string | `PASS`, `FAIL`, `AUDIT`, `REVIEW`, `HIGH RISK`, `N/A`, `NOT SUPPORTED` |
+| `Enabled` | string | `True` / `False` / blank; blank for MDE and indeterminate results |
+| `RawValue` | string | Serialised raw registry or API value; array values joined with a semicolon |
+| `Detail` | string | Human-readable evidence summary |
+| `Description` | string | One-sentence control explanation |
+| `Recommendation` | string | Brief recommended target state |
+| `Supported` | string | `True` / `False` / blank; `False` means the check was skipped on this OS build |
+| `RequiredSetting` | string | Target audit policy setting; populated for `AuditPolicy` rows only |
+| `ActionLabel` | string | `Audit` or `Warn` for advisory checks; blank otherwise |
+| `MDE_Source` | string | `Local` or `Policy`; populated for `MDE` rows only |
+| `MDE_ExclusionType` | string | `Path` or `Process`; populated for `MDE` rows only |
+| `MDE_ExclusionValue` | string | The exclusion path or process name; populated for `MDE` rows only |
+| `MDE_Alert` | string | `True` if the exclusion matched a high-risk pattern; populated for `MDE` rows only |
+| `MDE_Reason` | string | Risk classification reason; populated for `MDE` rows only |
+| `MDE_NormalisedValue` | string | Normalised exclusion path used for pattern matching; populated for `MDE` rows only |
+
+The file is written as UTF-8 with BOM so Excel on Windows opens it without a text import wizard.
 
 ## References
 

@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented here.
 
+## [0.5.4] - 2026-05-27
+
+### Added
+
+- CSV export format for the Save Report workflow. A **MD / CSV** radio button pair appears to the right of the Save Report button; MD is selected by default. Selecting CSV and clicking Save Report opens a file dialog pre-named `E8-Report-<hostname>-<yyyyMMdd>.csv` and writes a flat, 26-column UTF-8 with BOM CSV containing one row per check result across all three assessment types (E8, MDE Exclusions, Audit Policy). Every row includes system context columns (Hostname, IPAddress, LoggedInUser, Domain, OSName, OSBuild, LastPatch, ReportDate) so the file is self-contained for Power BI and Excel.
+- `Get-CsvReport` in `starthere.ps1` — builds the unified flat result list from `$script:AssessmentResults` and `$script:AuditPolicyResults`. Uses an `AssessmentType` column (`E8`, `MDE`, `AuditPolicy`) as the primary slicer. MDE-specific fields (`MDE_Source`, `MDE_ExclusionType`, `MDE_ExclusionValue`, `MDE_Alert`, `MDE_Reason`, `MDE_NormalisedValue`) are populated for MDE rows and blank for all others.
+- `Save-CsvReport` in `starthere.ps1` — SaveFileDialog and CSV write. Uses `UTF8Encoding($true)` to emit a BOM, enabling Excel on Windows to auto-detect encoding without the text import wizard. Uses `ConvertTo-Csv -NoTypeInformation` to suppress the `#TYPE` comment row.
+- `ConvertTo-CsvSafeString` helper in `starthere.ps1` — serialises null, arrays, and multiline strings to a single CSV-safe string; array values are joined with a semicolon.
+
+### Changed
+
+- Status bar now shows `Report saved (Markdown)` or `Report saved (CSV)` after a save so the format used is visible at a glance.
+- Bumped tool version to `0.5.4`.
+
 ## [0.5.3] - 2026-05-22
 
 ### Fixed
