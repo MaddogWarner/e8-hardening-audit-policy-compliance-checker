@@ -1,6 +1,29 @@
-#Requires -RunAsAdministrator
+﻿#Requires -RunAsAdministrator
 
 Set-StrictMode -Version Latest
+
+$script:MpPreferenceCache = $null
+$script:OsInfoCache = $null
+
+# Returns a cached Get-MpPreference result for the current scan run, avoiding
+# repeated calls from Defender-related checks that each need the same data.
+function Get-CachedMpPreference {
+    if ($null -eq $script:MpPreferenceCache) {
+        $script:MpPreferenceCache = Get-MpPreference -ErrorAction Stop
+    }
+
+    return $script:MpPreferenceCache
+}
+
+# Returns a cached Win32_OperatingSystem instance for the current scan run, avoiding
+# repeated CIM calls from checks that each need the same OS version information.
+function Get-CachedOsInfo {
+    if ($null -eq $script:OsInfoCache) {
+        $script:OsInfoCache = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+    }
+
+    return $script:OsInfoCache
+}
 
 function Get-RegistryPropertyValue {
     param([string]$Path, [string]$Name)
@@ -94,7 +117,7 @@ function Get-LsaProtectionStatus {
 # Workstations require Windows 10 1709+; servers require Windows Server 2019+.
 function Get-MemoryIntegrityStatus {
     try {
-        $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+        $os = Get-CachedOsInfo
     } catch {
         Write-Warning "Could not determine OS version for Memory Integrity version gate: $_"
         return ConvertTo-E8AssessmentResult `
@@ -161,7 +184,7 @@ function Get-MemoryIntegrityStatus {
 # Checks whether Credential Guard is actively running via Virtualisation-Based Security.
 function Get-CredentialGuardStatus {
     try {
-        $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+        $os = Get-CachedOsInfo
     } catch {
         Write-Warning "Could not determine OS version for Credential Guard version gate: $_"
         return ConvertTo-E8AssessmentResult `
@@ -325,16 +348,28 @@ function Get-PSConstrainedLanguageModeStatus {
         -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment' `
         -Name '__PSLockdownPolicy'
 
+    $enabled = ($languageMode -eq 'ConstrainedLanguage')
+    $additionalProperties = @{ LockdownPolicy = $lockdownPolicy }
+    $detail = "LanguageMode = $languageMode; __PSLockdownPolicy = $(ConvertTo-E8ValueText -Value $lockdownPolicy)"
+
+    if (-not $enabled) {
+        # An elevated administrator session is almost always FullLanguage even where
+        # CLM is enforced for standard users via WDAC/AppLocker, so a hard FAIL here
+        # is not representative. Flag for manual review instead.
+        $additionalProperties['ActionLabel'] = 'Warn'
+        $detail += '; this elevated session is not representative of standard-user enforcement'
+    }
+
     ConvertTo-E8AssessmentResult `
         -Check 'PowerShell Constrained Language Mode' `
         -Category 'PowerShell Hardening' `
         -ML 'ML2' `
-        -Enabled ($languageMode -eq 'ConstrainedLanguage') `
+        -Enabled $enabled `
         -RawValue $languageMode `
-        -Detail "LanguageMode = $languageMode; __PSLockdownPolicy = $(ConvertTo-E8ValueText -Value $lockdownPolicy)" `
+        -Detail $detail `
         -Description 'Restricts PowerShell language features to reduce abuse of .NET, COM, and arbitrary code execution primitives.' `
         -Recommendation 'Enforce Constrained Language Mode through WDAC or AppLocker; registry lockdown policy alone should not be treated as the preferred enterprise control.' `
-        -AdditionalProperties @{ LockdownPolicy = $lockdownPolicy }
+        -AdditionalProperties $additionalProperties
 }
 
 # Checks whether execution policy is restrictive at MachinePolicy or LocalMachine scope.
@@ -343,9 +378,18 @@ function Get-PSExecutionPolicyStatus {
     $machinePolicy = ($policies | Where-Object { $_.Scope -eq 'MachinePolicy' }).ExecutionPolicy
     $localMachine = ($policies | Where-Object { $_.Scope -eq 'LocalMachine' }).ExecutionPolicy
     $effectivePolicy = Get-ExecutionPolicy
-    $unsafeScopes = @($policies | Where-Object { $_.ExecutionPolicy -in @('Unrestricted', 'Bypass') })
+    # Process scope is session-local (e.g. set by starthere.ps1's own -ExecutionPolicy
+    # Bypass relaunch) and does not reflect host configuration, so it is excluded here.
+    $evaluatedPolicies = @($policies | Where-Object { $_.Scope -ne 'Process' })
+    $unsafeScopes = @($evaluatedPolicies | Where-Object { $_.ExecutionPolicy -in @('Unrestricted', 'Bypass') })
     $restrictivePolicy = @('AllSigned', 'RemoteSigned')
     $enabled = (($machinePolicy -in $restrictivePolicy) -or ($localMachine -in $restrictivePolicy)) -and ($unsafeScopes.Count -eq 0)
+
+    $additionalProperties = @{ PolicyList = $policies; UnsafeScopes = ($unsafeScopes.Scope -join ', ') }
+    $processPolicy = ($policies | Where-Object { $_.Scope -eq 'Process' }).ExecutionPolicy
+    if ($processPolicy -in @('Unrestricted', 'Bypass')) {
+        $additionalProperties['Note'] = "Process scope = $processPolicy; excluded from evaluation as session-transient."
+    }
 
     ConvertTo-E8AssessmentResult `
         -Check 'PowerShell Execution Policy' `
@@ -353,34 +397,40 @@ function Get-PSExecutionPolicyStatus {
         -ML 'ML2' `
         -Enabled $enabled `
         -RawValue $effectivePolicy `
-        -Detail "Effective = $effectivePolicy; MachinePolicy = $machinePolicy; LocalMachine = $localMachine" `
+        -Detail "Effective = $effectivePolicy; MachinePolicy = $machinePolicy; LocalMachine = $localMachine; PolicyList = $(ConvertTo-E8ValueText -Value ($policies | ForEach-Object { "$($_.Scope)=$($_.ExecutionPolicy)" }))" `
         -Description 'Sets a baseline control for script execution and helps prevent accidental execution of untrusted scripts.' `
         -Recommendation 'Set MachinePolicy or LocalMachine to AllSigned or RemoteSigned and remove Unrestricted or Bypass from all scopes.' `
-        -AdditionalProperties @{ PolicyList = $policies; UnsafeScopes = ($unsafeScopes.Scope -join ', ') }
+        -AdditionalProperties $additionalProperties
 }
 
 # Checks whether Windows Defender real-time protection is active.
 function Get-DefenderRealTimeStatus {
     try {
-        $pref = Get-MpPreference -ErrorAction Stop
+        $status = Get-MpComputerStatus -ErrorAction Stop
+        $enabled = [bool]$status.RealTimeProtectionEnabled
+        $detail = "RealTimeProtectionEnabled = $($status.RealTimeProtectionEnabled); AMRunningMode = $(ConvertTo-E8ValueText -Value $status.AMRunningMode)"
+        if ($status.AMRunningMode -eq 'Passive Mode') {
+            $detail += ' (Defender is running in passive mode, typically because a third-party antivirus is active)'
+        }
+
         ConvertTo-E8AssessmentResult `
             -Check 'Defender Real-Time Protection' `
             -Category 'Defender' `
             -ML 'ML1' `
-            -Enabled (-not $pref.DisableRealtimeMonitoring) `
-            -RawValue $pref.DisableRealtimeMonitoring `
-            -Detail "DisableRealtimeMonitoring = $($pref.DisableRealtimeMonitoring)" `
+            -Enabled $enabled `
+            -RawValue $status.RealTimeProtectionEnabled `
+            -Detail $detail `
             -Description 'Ensures Defender Antivirus actively scans files and processes as they are accessed.' `
             -Recommendation 'Enable Defender real-time protection and prevent local users from disabling it.'
     } catch {
-        Write-Warning "Could not query Defender preferences: $_"
+        Write-Warning "Could not query Defender runtime status: $_"
         ConvertTo-E8AssessmentResult `
             -Check 'Defender Real-Time Protection' `
             -Category 'Defender' `
             -ML 'ML1' `
             -Enabled $null `
             -RawValue $null `
-            -Detail 'Unable to query Defender preferences' `
+            -Detail 'Unable to query Defender runtime status' `
             -Description 'Ensures Defender Antivirus actively scans files and processes as they are accessed.' `
             -Recommendation 'Confirm Defender Antivirus is installed, healthy, and manageable on this host.'
     }
@@ -389,7 +439,7 @@ function Get-DefenderRealTimeStatus {
 # Checks whether Defender cloud-delivered protection is enabled.
 function Get-DefenderCloudProtectionStatus {
     try {
-        $pref = Get-MpPreference -ErrorAction Stop
+        $pref = Get-CachedMpPreference
         ConvertTo-E8AssessmentResult `
             -Check 'Defender Cloud-Delivered Protection' `
             -Category 'Defender' `
@@ -419,15 +469,30 @@ function Get-DefenderTamperProtectionStatus {
         -Path 'HKLM:\SOFTWARE\Microsoft\Windows Defender\Features' `
         -Name 'TamperProtection'
 
-    ConvertTo-E8AssessmentResult `
-        -Check 'Defender Tamper Protection' `
-        -Category 'Defender' `
-        -ML 'ML2' `
-        -Enabled ($val -eq 5) `
-        -RawValue $val `
-        -Detail "TamperProtection = $(ConvertTo-E8ValueText -Value $val)" `
-        -Description 'Prevents unauthorised or malicious changes to critical Defender settings.' `
-        -Recommendation 'Enable Tamper Protection through Microsoft Defender for Endpoint or endpoint security policy.'
+    try {
+        $status = Get-MpComputerStatus -ErrorAction Stop
+        ConvertTo-E8AssessmentResult `
+            -Check 'Defender Tamper Protection' `
+            -Category 'Defender' `
+            -ML 'ML2' `
+            -Enabled ([bool]$status.IsTamperProtected) `
+            -RawValue $status.IsTamperProtected `
+            -Detail "IsTamperProtected = $($status.IsTamperProtected); registry TamperProtection = $(ConvertTo-E8ValueText -Value $val)" `
+            -Description 'Prevents unauthorised or malicious changes to critical Defender settings.' `
+            -Recommendation 'Enable Tamper Protection through Microsoft Defender for Endpoint or endpoint security policy.'
+    } catch {
+        Write-Warning "Could not query Defender runtime status, falling back to registry: $_"
+        ConvertTo-E8AssessmentResult `
+            -Check 'Defender Tamper Protection' `
+            -Category 'Defender' `
+            -ML 'ML2' `
+            -Enabled $null `
+            -RawValue $val `
+            -Detail "Runtime state unavailable; registry TamperProtection = $(ConvertTo-E8ValueText -Value $val)" `
+            -Description 'Prevents unauthorised or malicious changes to critical Defender settings.' `
+            -Recommendation 'Enable Tamper Protection through Microsoft Defender for Endpoint or endpoint security policy.' `
+            -AdditionalProperties @{ Note = 'Runtime state unavailable; registry value alone is not authoritative' }
+    }
 }
 
 # Checks the configured action for each E8-relevant ASR rule via Get-MpPreference.
@@ -450,7 +515,7 @@ function Get-ASRRuleStatus {
     }
 
     try {
-        $pref = Get-MpPreference -ErrorAction Stop
+        $pref = Get-CachedMpPreference
     } catch {
         Write-Warning "Could not query MpPreference for ASR rules: $_"
         foreach ($guid in $rules.Keys) {
@@ -665,6 +730,13 @@ function Get-UACStatus {
         -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' `
         -Name 'EnableLUA'
 
+    $additionalProperties = @{}
+    if ($null -eq $val) {
+        # Windows defaults UAC to enabled when EnableLUA is absent, but the tool keeps
+        # the conservative FAIL judgement here and surfaces the default-state context via Note.
+        $additionalProperties['Note'] = 'Value absent; Windows defaults UAC to enabled, but explicit policy configuration is recommended'
+    }
+
     ConvertTo-E8AssessmentResult `
         -Check 'User Account Control (UAC) Enabled' `
         -Category 'System Security' `
@@ -673,7 +745,8 @@ function Get-UACStatus {
         -RawValue $val `
         -Detail "EnableLUA = $(ConvertTo-E8ValueText -Value $val)" `
         -Description 'Requires elevation for privileged operations and reduces the impact of standard user compromise.' `
-        -Recommendation 'Enable UAC and manage privileged access through least privilege administrative processes.'
+        -Recommendation 'Enable UAC and manage privileged access through least privilege administrative processes.' `
+        -AdditionalProperties $additionalProperties
 }
 
 # Checks whether Secure Boot is active on this host.
@@ -745,7 +818,7 @@ function Get-BitLockerOSDriveStatus {
             -Check 'BitLocker OS Drive Encryption' `
             -Category 'Encryption' `
             -ML 'ML2' `
-            -Enabled $false `
+            -Enabled $null `
             -RawValue $null `
             -Detail "Unable to query BitLocker status: $($_.Exception.Message)" `
             -Description 'Checks whether BitLocker Drive Encryption is enabled and actively protecting the OS drive against unauthorised data access if the device is lost or stolen.' `
