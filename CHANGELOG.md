@@ -2,7 +2,9 @@
 
 All notable changes to this project will be documented here.
 
-## [0.6.0] - 2026-07-07
+## [1.0.0] - 2026-07-07
+
+First stable release. All accuracy, reliability, and performance findings from the full codebase review are resolved; the tool is considered release-ready.
 
 ### Fixed
 

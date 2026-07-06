@@ -3,7 +3,7 @@ param()
 
 Set-StrictMode -Version Latest
 
-$script:ToolVersion = '0.6.0'
+$script:ToolVersion = '1.0.0'
 $script:AssessmentResults = New-Object System.Collections.ArrayList
 $script:AuditPolicyResults = New-Object System.Collections.ArrayList
 $script:AuditPolCache = $null
