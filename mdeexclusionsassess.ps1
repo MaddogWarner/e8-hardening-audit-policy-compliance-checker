@@ -1,4 +1,4 @@
-Set-StrictMode -Version Latest
+﻿Set-StrictMode -Version Latest
 
 function Get-DefenderExclusionRegistryTarget {
     @(
@@ -13,6 +13,11 @@ function Get-DefenderExclusionRegistryTarget {
             RegistryPath  = 'HKLM:\SOFTWARE\Microsoft\Windows Defender\Exclusions\Processes'
         }
         [PSCustomObject]@{
+            Source        = 'Local'
+            ExclusionType = 'Extension'
+            RegistryPath  = 'HKLM:\SOFTWARE\Microsoft\Windows Defender\Exclusions\Extensions'
+        }
+        [PSCustomObject]@{
             Source        = 'Policy'
             ExclusionType = 'Path'
             RegistryPath  = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Exclusions\Paths'
@@ -21,6 +26,11 @@ function Get-DefenderExclusionRegistryTarget {
             Source        = 'Policy'
             ExclusionType = 'Process'
             RegistryPath  = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Exclusions\Processes'
+        }
+        [PSCustomObject]@{
+            Source        = 'Policy'
+            ExclusionType = 'Extension'
+            RegistryPath  = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Exclusions\Extensions'
         }
     )
 }
@@ -110,14 +120,18 @@ function ConvertTo-NormalisedExclusionValue {
 
 function Get-DefenderExclusionRisk {
     <#
-    Identifies high-risk file, folder, and process exclusions that create broad
-    blind spots in locations commonly abused by malware and hands-on-keyboard
-    activity: C:\Users, C:\Temp, and entire drive roots such as C:\ or D:.
+    Identifies high-risk file, folder, process, and extension exclusions that create
+    broad blind spots in locations and file types commonly abused by malware and
+    hands-on-keyboard activity: C:\Users, C:\Windows\Temp, C:\ProgramData, C:\Temp,
+    entire drive roots such as C:\ or D:, executable/script file extensions, and
+    bare process-name exclusions for common LOLBins (e.g. powershell.exe, mshta.exe).
     #>
     param(
         [Parameter(Mandatory = $true)]
         [AllowEmptyString()]
-        [string]$ExclusionValue
+        [string]$ExclusionValue,
+
+        [string]$ExclusionType = ''
     )
 
     $normalisedValue = ConvertTo-NormalisedExclusionValue -Value $ExclusionValue
@@ -131,7 +145,7 @@ function Get-DefenderExclusionRisk {
         }
     }
 
-    if ($normalisedValue -match '^[A-Za-z]:\\?(\*|\*\.\*)?$' -or $normalisedValue -match '^[A-Za-z]:\\(\*|\*\.\*)$') {
+    if ($normalisedValue -match '^[A-Za-z]:\\?(\*|\*\.\*)?$') {
         return [PSCustomObject]@{
             Alert      = $true
             Severity   = 'High'
@@ -158,10 +172,48 @@ function Get-DefenderExclusionRisk {
         }
     }
 
+    if ($normalisedValue -match '(?i)^c:\\windows\\temp(\\|$|\*)') {
+        return [PSCustomObject]@{
+            Alert      = $true
+            Severity   = 'High'
+            Reason     = 'C:\Windows\Temp path excluded'
+            Normalised = $normalisedValue
+        }
+    }
+
+    if ($normalisedValue -match '(?i)^c:\\programdata(\\|$|\*)') {
+        return [PSCustomObject]@{
+            Alert      = $true
+            Severity   = 'High'
+            Reason     = 'C:\ProgramData path excluded'
+            Normalised = $normalisedValue
+        }
+    }
+
+    $looksLikeExtension = $normalisedValue -match '(?i)^\*?\.?(exe|ps1|dll|js|vbs|bat|cmd|scr|com|msi)$'
+    if ($looksLikeExtension -and ($ExclusionType -eq 'Extension' -or [string]::IsNullOrEmpty($ExclusionType))) {
+        return [PSCustomObject]@{
+            Alert      = $true
+            Severity   = 'High'
+            Reason     = 'Executable or script file extension excluded'
+            Normalised = $normalisedValue
+        }
+    }
+
+    $looksLikeLolBinProcess = $normalisedValue -match '(?i)^(powershell|pwsh|cmd|wscript|cscript|mshta|rundll32|regsvr32|msbuild)\.exe$'
+    if ($looksLikeLolBinProcess -and ($ExclusionType -eq 'Process' -or [string]::IsNullOrEmpty($ExclusionType))) {
+        return [PSCustomObject]@{
+            Alert      = $true
+            Severity   = 'High'
+            Reason     = 'Common LOLBin process excluded'
+            Normalised = $normalisedValue
+        }
+    }
+
     [PSCustomObject]@{
         Alert      = $false
         Severity   = 'None'
-        Reason     = 'No risky path pattern matched'
+        Reason     = 'No risky path, extension, or process pattern matched'
         Normalised = $normalisedValue
     }
 }
@@ -192,7 +244,7 @@ function Get-MdeExclusionAssessment {
             continue
         }
 
-        $risk = Get-DefenderExclusionRisk -ExclusionValue $entry.ExclusionValue
+        $risk = Get-DefenderExclusionRisk -ExclusionValue $entry.ExclusionValue -ExclusionType $entry.ExclusionType
         $severity = if ($risk.Alert) { 'High' } else { 'Review' }
 
         [PSCustomObject]@{

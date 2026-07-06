@@ -75,6 +75,8 @@ The current assessment workflow is audit-only - it makes no changes to system se
 
 The `Audit Policy` button reads Advanced Audit Policy once per run using `auditpol.exe /get /category:* /r`, checks event log maximum sizes with `Get-WinEvent -ListLog`, and checks outgoing NTLM audit posture from the registry. It appends results to the GUI and adds dedicated audit policy sections to saved markdown reports.
 
+Subcategory lookups match on the locale-stable `Subcategory GUID` column rather than the localised `Subcategory` display name, so results are consistent on non-English Windows installations. If a subcategory cannot be resolved from `auditpol` output, the check reports an indeterminate result rather than assuming `No Auditing`.
+
 | Category | Check | Required setting |
 |---|---|---|
 | Event Log Configuration | Security Event Log Size | At least 2,097,152 KB |
@@ -111,17 +113,17 @@ The `Audit Policy` button reads Advanced Audit Policy once per run using `auditp
 | Module Logging | Pipeline execution details logged to Event ID 4103 |
 | Transcription | Full session transcript written to disk |
 | PowerShell v2 Engine Disabled | Legacy PS v2 engine removed (bypasses AMSI and logging if present) |
-| PowerShell Constrained Language Mode | Current session language mode and lockdown policy signal |
+| PowerShell Constrained Language Mode | Current session language mode and lockdown policy signal. An elevated session that is not Constrained Language shows as `REVIEW` rather than `FAIL`, because an administrator session is almost always `FullLanguage` even where CLM is enforced for standard users |
 | PowerShell Execution Policy | Machine policy or local machine scope set to `AllSigned` or `RemoteSigned`, with no unsafe scope override |
 
 ### Windows Defender
 
 | Check | What it looks for |
 |---|---|
-| Real-Time Protection | Defender real-time monitoring active |
+| Real-Time Protection | Defender real-time monitoring active at runtime (`Get-MpComputerStatus`), with passive mode flagged explicitly |
 | Cloud-Delivered Protection | MAPS/cloud protection enabled (basic or advanced) |
-| Tamper Protection | Defender settings protected from unauthorised modification |
-| Microsoft Defender Antivirus Exclusions | Alerts on file, folder, and process exclusions for `C:\Users`, `C:\Temp`, or entire drive roots such as `C:\` or `D:` |
+| Tamper Protection | Defender settings protected from unauthorised modification at runtime (`Get-MpComputerStatus.IsTamperProtected`), with the registry value retained as evidence only |
+| Microsoft Defender Antivirus Exclusions | Alerts on file, folder, process, and extension exclusions for `C:\Users`, `C:\Windows\Temp`, `C:\ProgramData`, `C:\Temp`, entire drive roots such as `C:\` or `D:`, bare executable/script extensions (e.g. `exe`, `ps1`, `js`), and bare process-name exclusions for common LOLBins (e.g. `powershell.exe`, `mshta.exe`) |
 
 ### Attack Surface Reduction (14 rules)
 

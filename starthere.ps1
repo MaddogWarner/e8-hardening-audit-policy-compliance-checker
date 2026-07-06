@@ -1,12 +1,14 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param()
 
 Set-StrictMode -Version Latest
 
-$script:ToolVersion = '0.5.4'
+$script:ToolVersion = '0.6.0'
 $script:AssessmentResults = New-Object System.Collections.ArrayList
 $script:AuditPolicyResults = New-Object System.Collections.ArrayList
 $script:AuditPolCache = $null
+$script:MpPreferenceCache = $null
+$script:OsInfoCache = $null
 $script:SystemInfo = $null
 
 function Test-IsWindowsHost {
@@ -42,7 +44,11 @@ function Start-ElevatedScript {
     )
 
     if ($PSCmdlet.ShouldProcess($PSCommandPath, 'Restart this script with administrator privileges')) {
-        Start-Process -FilePath $powerShellPath -ArgumentList $argumentList -Verb RunAs
+        try {
+            Start-Process -FilePath $powerShellPath -ArgumentList $argumentList -Verb RunAs -ErrorAction Stop
+        } catch {
+            Write-Warning 'Elevation was declined; the tool requires administrator privileges and will now exit.'
+        }
     }
 }
 
@@ -809,22 +815,30 @@ function Show-StartHereForm {
             $statusLabel.Text = 'Scanning Essential Eight hardening controls...'
             $progressBar.Visible = $true
             $progressBar.Value = 0
-            $progressBar.Maximum = 50
             $resultsListView.Items.Clear()
             [void]$script:AssessmentResults.Clear()
+            $script:MpPreferenceCache = $null
+            $script:OsInfoCache = $null
 
             $script:SystemInfo = Get-SystemInfo
             Show-SystemInfoPanel -Labels $systemLabels -Info $script:SystemInfo
 
-            foreach ($command in Get-E8CheckCommand) {
+            $commands = @(Get-E8CheckCommand)
+            $progressBar.Maximum = [Math]::Max(1, $commands.Count)
+
+            foreach ($command in $commands) {
+                $statusLabel.Text = "Running check: $command"
+                [System.Windows.Forms.Application]::DoEvents()
+
                 $results = @(& $command)
                 foreach ($result in $results) {
                     Add-AssessmentResultRow -ListView $resultsListView -Result $result
-                    if ($progressBar.Value -lt $progressBar.Maximum) {
-                        $progressBar.Value++
-                    }
-                    [System.Windows.Forms.Application]::DoEvents()
                 }
+
+                if ($progressBar.Value -lt $progressBar.Maximum) {
+                    $progressBar.Value++
+                }
+                [System.Windows.Forms.Application]::DoEvents()
             }
 
             $progressBar.Value = $progressBar.Maximum
@@ -922,6 +936,7 @@ function Show-StartHereForm {
             $auditPolicyButton.Enabled = $false
             $saveButton.Enabled = $false
             $script:AuditPolCache = $null
+            $script:OsInfoCache = $null
             [void]$script:AuditPolicyResults.Clear()
 
             $existingAuditItems = @($resultsListView.Items | Where-Object {
@@ -948,6 +963,9 @@ function Show-StartHereForm {
             [System.Windows.Forms.Application]::DoEvents()
 
             foreach ($command in $commands) {
+                $statusLabel.Text = "Running check: $command"
+                [System.Windows.Forms.Application]::DoEvents()
+
                 $results = @(& $command)
                 foreach ($result in $results) {
                     Add-AssessmentResultRow -ListView $resultsListView -Result $result

@@ -1,20 +1,49 @@
-#Requires -RunAsAdministrator
+﻿#Requires -RunAsAdministrator
 
 Set-StrictMode -Version Latest
 
 $script:AuditPolCache = $null
+
+# Maps each supported audit subcategory to its well-known Microsoft GUID (curly-brace
+# format, as emitted by auditpol.exe). GUIDs are stable across locales, unlike the
+# 'Subcategory' display name column, which auditpol localises on non-English Windows.
+$script:AuditSubcategoryGuidMap = @{
+    'Account Lockout'                  = '{0CCE9217-69AE-11D9-BED3-505054503030}'
+    'Logon'                            = '{0CCE9215-69AE-11D9-BED3-505054503030}'
+    'Logoff'                           = '{0CCE9216-69AE-11D9-BED3-505054503030}'
+    'Special Logon'                    = '{0CCE921B-69AE-11D9-BED3-505054503030}'
+    'Group Membership'                 = '{0CCE9249-69AE-11D9-BED3-505054503030}'
+    'Other Logon/Logoff Events'        = '{0CCE921C-69AE-11D9-BED3-505054503030}'
+    'User Account Management'          = '{0CCE9235-69AE-11D9-BED3-505054503030}'
+    'Security Group Management'        = '{0CCE9237-69AE-11D9-BED3-505054503030}'
+    'Computer Account Management'      = '{0CCE9236-69AE-11D9-BED3-505054503030}'
+    'Other Account Management Events'  = '{0CCE923A-69AE-11D9-BED3-505054503030}'
+    'Audit Policy Change'              = '{0CCE922F-69AE-11D9-BED3-505054503030}'
+    'Other Policy Change Events'       = '{0CCE9234-69AE-11D9-BED3-505054503030}'
+    'System Integrity'                 = '{0CCE9212-69AE-11D9-BED3-505054503030}'
+    'Process Creation'                 = '{0CCE922B-69AE-11D9-BED3-505054503030}'
+    'Process Termination'              = '{0CCE922C-69AE-11D9-BED3-505054503030}'
+    'File Share'                       = '{0CCE9224-69AE-11D9-BED3-505054503030}'
+    'Other Object Access Events'       = '{0CCE9227-69AE-11D9-BED3-505054503030}'
+    'Kernel Object'                    = '{0CCE921F-69AE-11D9-BED3-505054503030}'
+    'Detailed File Share'              = '{0CCE9244-69AE-11D9-BED3-505054503030}'
+    'File System'                      = '{0CCE921D-69AE-11D9-BED3-505054503030}'
+    'Registry'                         = '{0CCE921E-69AE-11D9-BED3-505054503030}'
+}
 
 function Get-CachedAuditPolicies {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Public helper name follows the phase implementation plan.')]
     param()
 
     if ($null -eq $script:AuditPolCache) {
-        $raw = & auditpol.exe /get /category:* /r 2>&1
+        $raw = & auditpol.exe /get /category:* /r 2>$null
         if ($LASTEXITCODE -ne 0) {
             throw "auditpol.exe failed with exit code $LASTEXITCODE. Ensure the script is running as administrator."
         }
 
-        $script:AuditPolCache = $raw | ConvertFrom-Csv
+        # Defence in depth: filter to string lines only before CSV parsing, in case
+        # any non-string output slips through despite discarding stderr above.
+        $script:AuditPolCache = @($raw | Where-Object { $_ -is [string] }) | ConvertFrom-Csv
     }
 
     return $script:AuditPolCache
@@ -26,13 +55,24 @@ function Get-AuditSubcategoryInclusion {
         [string]$SubcategoryName
     )
 
+    $guid = $script:AuditSubcategoryGuidMap[$SubcategoryName]
+    if (-not $guid) {
+        Write-Warning "No known GUID mapping for audit subcategory '$SubcategoryName'."
+        return $null
+    }
+
     $all = Get-CachedAuditPolicies
-    $entry = $all | Where-Object { $_.'Subcategory' -eq $SubcategoryName } | Select-Object -First 1
+    # Match on the 'Subcategory GUID' column rather than the localised 'Subcategory'
+    # name column, so this works on non-English Windows installations.
+    $entry = $all | Where-Object { $_.'Subcategory GUID' -and $_.'Subcategory GUID'.Trim() -ieq $guid } | Select-Object -First 1
     if ($entry) {
+        # NOTE: the 'Inclusion Setting' text itself (e.g. 'Success and Failure') is also
+        # localised by auditpol on non-English Windows. Comparison against RequiredSetting
+        # in Test-AuditSubcategoryCompliant assumes an English-language OS.
         return ($entry.'Inclusion Setting').Trim()
     }
 
-    return 'No Auditing'
+    return $null
 }
 
 function Test-AuditSubcategoryCompliant {
@@ -133,6 +173,23 @@ function ConvertTo-AuditSettingResult {
     )
 
     $current = Get-AuditSubcategoryInclusion -SubcategoryName $SubcategoryName
+
+    if ($null -eq $current) {
+        # The subcategory could not be resolved from auditpol output (e.g. GUID not
+        # present in this auditpol.exe /r dump). Report indeterminate rather than
+        # evaluating compliance against a missing value.
+        return ConvertTo-AuditPolicyResult `
+            -CheckName $CheckName `
+            -Category $Category `
+            -ML $ML `
+            -Enabled $null `
+            -RawValue $null `
+            -Detail "Subcategory '$SubcategoryName' could not be resolved from auditpol.exe output" `
+            -Description $Description `
+            -Recommendation $Recommendation `
+            -RequiredSetting $RequiredSetting
+    }
+
     $compliant = Test-AuditSubcategoryCompliant -CurrentSetting $current -RequiredSetting $RequiredSetting
     $actionLabel = if ($Advisory -and -not $compliant) { 'Warn' } else { '' }
 
@@ -189,7 +246,7 @@ function Get-AuditLogSizeStatus {
             -CheckName $CheckName `
             -Category 'Event Log Configuration' `
             -ML 'ML1' `
-            -Enabled $false `
+            -Enabled $null `
             -RawValue $null `
             -Detail 'Unable to read log configuration' `
             -Description $Description `
@@ -198,9 +255,11 @@ function Get-AuditLogSizeStatus {
     }
 }
 
+# Uses Get-CachedOsInfo from essential8compliancecheck.ps1, which starthere.ps1 dot-sources
+# before this library, so the OS query is shared across both assessment libraries per scan.
 function Get-CurrentOsBuild {
     try {
-        $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+        $os = Get-CachedOsInfo
         return ($os.BuildNumber -as [int])
     } catch {
         Write-Warning "Could not determine OS version for audit policy version gate: $_"

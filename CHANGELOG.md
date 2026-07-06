@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented here.
 
+## [0.6.0] - 2026-07-07
+
+### Fixed
+
+- `Get-PSExecutionPolicyStatus` in `essential8compliancecheck.ps1` was failing on every self-elevated run because `starthere.ps1`'s `Start-ElevatedScript` relaunches with `-ExecutionPolicy Bypass`, which sets the Process scope to Bypass. The Process scope is session-local and does not reflect host configuration, so it is now excluded from the unsafe-scope evaluation. A `Note` is added via `AdditionalProperties` when Process scope is Unrestricted or Bypass, stating it was excluded as session-transient.
+- `Get-AuditSubcategoryInclusion` in `auditpolicyassess.ps1` matched rows on the localised `Subcategory` display name column, which (a) breaks on non-English Windows where `auditpol /r` emits localised subcategory names, and (b) caused a lookup miss to silently return the literal `'No Auditing'`, making `Audit Detailed File Share` falsely `PASS`. Matching now uses the locale-stable `Subcategory GUID` column against a well-known GUID map for each subcategory. A lookup miss now returns `$null`, and `ConvertTo-AuditSettingResult` reports an indeterminate result (`Enabled $null`) with a detail explaining the subcategory could not be resolved, instead of evaluating compliance against a placeholder value. Added a comment noting that the `Inclusion Setting` text comparison still assumes an English-language OS.
+- `Get-DefenderRealTimeStatus` and `Get-DefenderTamperProtectionStatus` in `essential8compliancecheck.ps1` read policy preference rather than runtime state. Real-Time Protection now uses `Get-MpComputerStatus.RealTimeProtectionEnabled`, with `AMRunningMode` included in `Detail` and passive mode flagged explicitly; a try/catch fallback returns indeterminate (`$null`) if `Get-MpComputerStatus` fails. Tamper Protection now uses `Get-MpComputerStatus.IsTamperProtected`, keeping the registry `Features\TamperProtection` value as evidence only in `Detail`, with a try/catch fallback to indeterminate if runtime state is unavailable.
+- `Get-PSConstrainedLanguageModeStatus` in `essential8compliancecheck.ps1` hard-failed on elevated administrator sessions, which are almost always `FullLanguage` even where Constrained Language Mode is enforced for standard users via WDAC or AppLocker. The check keeps `Enabled $false` but now adds `ActionLabel = 'Warn'` (mapped to `REVIEW` in the GUI) and notes in `Detail` that the elevated session is not representative of standard-user enforcement.
+- Query failures no longer report a hard `FAIL`. `Get-AuditLogSizeStatus` in `auditpolicyassess.ps1` and `Get-BitLockerOSDriveStatus` in `essential8compliancecheck.ps1` now return `Enabled $null` on their generic catch paths, since a query failure is not evidence of non-compliance.
+- `Get-UACStatus` in `essential8compliancecheck.ps1` keeps the conservative `FAIL` when `EnableLUA` is absent, but now adds a `Note` via `AdditionalProperties` stating that Windows defaults UAC to enabled in this case, while explicit policy configuration remains recommended.
+- `Start-ElevatedScript` in `starthere.ps1` now wraps `Start-Process -Verb RunAs` in try/catch. If the user declines the UAC prompt, the tool writes a friendly `Write-Warning` and exits instead of surfacing an unhandled exception.
+- `Get-CachedAuditPolicies` in `auditpolicyassess.ps1` no longer merges `auditpol.exe` stderr into the CSV parser (dropped `2>&1` in favour of `2>$null`). The cached output is also filtered to `[string]` lines before `ConvertFrom-Csv` as defence in depth.
+- All four `.ps1` files are now saved as UTF-8 **with BOM**. Windows PowerShell 5.1 reads BOM-less files as ANSI, which could corrupt non-ASCII characters such as the em dash used in comments and UI text.
+
+### Added
+
+- Extension exclusion coverage in `mdeexclusionsassess.ps1`: `Get-DefenderExclusionRegistryTarget` now includes Local and Policy registry targets for `Exclusions\Extensions`, alongside the existing Path and Process targets.
+- New high-risk patterns in `Get-DefenderExclusionRisk` (`mdeexclusionsassess.ps1`): bare executable/script file extensions (`exe`, `ps1`, `dll`, `js`, `vbs`, `bat`, `cmd`, `scr`, `com`, `msi`, with or without a leading dot or asterisk); `C:\Windows\Temp` and `C:\ProgramData` path prefixes; and bare process-name exclusions for common LOLBins (`powershell.exe`, `pwsh.exe`, `cmd.exe`, `wscript.exe`, `cscript.exe`, `mshta.exe`, `rundll32.exe`, `regsvr32.exe`, `msbuild.exe`). `Get-DefenderExclusionRisk` gained an optional `-ExclusionType` parameter, passed from `Get-MdeExclusionAssessment`, used to scope the extension and LOLBin-process patterns to their respective exclusion types.
+- `Get-CachedMpPreference` and `$script:MpPreferenceCache` in `essential8compliancecheck.ps1` — caches a single `Get-MpPreference` call per scan run, used by `Get-DefenderCloudProtectionStatus` and `Get-ASRRuleStatus`.
+- `Get-CachedOsInfo` and `$script:OsInfoCache` in `essential8compliancecheck.ps1` — caches a single `Get-CimInstance Win32_OperatingSystem` call per scan run, used by `Get-MemoryIntegrityStatus`, `Get-CredentialGuardStatus`, and (cross-library) `Get-CurrentOsBuild` in `auditpolicyassess.ps1`.
+- `starthere.ps1` resets `$script:MpPreferenceCache` and `$script:OsInfoCache` at the start of the Run E8 Scan and Audit Policy button handlers, alongside the existing `$script:AuditPolCache` reset, so a re-scan reflects current state.
+- `starthere.ps1` now updates `$statusLabel.Text` with the current check name and calls `[System.Windows.Forms.Application]::DoEvents()` before invoking each check command in the E8 scan and Audit Policy handlers, so the UI shows progress during long blocking calls such as `Get-WindowsOptionalFeature`.
+
+### Changed
+
+- The E8 scan progress bar `Maximum` is now set from `Get-E8CheckCommand`'s command count instead of a hardcoded value of 50, and increments once per command rather than once per result row, so the bar reaches full exactly at the end of the scan.
+- Bumped tool version to `0.6.0`.
+
 ## [0.5.4] - 2026-05-27
 
 ### Added
