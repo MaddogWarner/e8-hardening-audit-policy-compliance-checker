@@ -318,6 +318,22 @@ function Get-PowerShellV2Status {
     try {
         $feature = Get-WindowsOptionalFeature -Online `
             -FeatureName MicrosoftWindowsPowerShellV2Root -ErrorAction Stop
+
+        if ($null -eq $feature) {
+            # Some newer Windows builds no longer ship this optional feature at all, so
+            # DISM returns nothing rather than a 'Disabled' state. No feature present means
+            # the legacy engine cannot be enabled, so this is compliant, not indeterminate.
+            return ConvertTo-E8AssessmentResult `
+                -Check 'PowerShell v2 Engine Disabled' `
+                -Category 'PowerShell Hardening' `
+                -ML 'ML2' `
+                -Enabled $true `
+                -RawValue $null `
+                -Detail 'MicrosoftWindowsPowerShellV2Root optional feature is not present on this Windows build' `
+                -Description 'Removes the legacy PowerShell v2 engine, which lacks modern logging and AMSI integration.' `
+                -Recommendation 'No action needed; this Windows build does not ship the legacy PowerShell v2 optional feature.'
+        }
+
         ConvertTo-E8AssessmentResult `
             -Check 'PowerShell v2 Engine Disabled' `
             -Category 'PowerShell Hardening' `
@@ -374,33 +390,52 @@ function Get-PSConstrainedLanguageModeStatus {
 
 # Checks whether execution policy is restrictive at MachinePolicy or LocalMachine scope.
 function Get-PSExecutionPolicyStatus {
-    $policies = @(Get-ExecutionPolicy -List)
-    $machinePolicy = ($policies | Where-Object { $_.Scope -eq 'MachinePolicy' }).ExecutionPolicy
-    $localMachine = ($policies | Where-Object { $_.Scope -eq 'LocalMachine' }).ExecutionPolicy
-    $effectivePolicy = Get-ExecutionPolicy
-    # Process scope is session-local (e.g. set by starthere.ps1's own -ExecutionPolicy
-    # Bypass relaunch) and does not reflect host configuration, so it is excluded here.
-    $evaluatedPolicies = @($policies | Where-Object { $_.Scope -ne 'Process' })
-    $unsafeScopes = @($evaluatedPolicies | Where-Object { $_.ExecutionPolicy -in @('Unrestricted', 'Bypass') })
-    $restrictivePolicy = @('AllSigned', 'RemoteSigned')
-    $enabled = (($machinePolicy -in $restrictivePolicy) -or ($localMachine -in $restrictivePolicy)) -and ($unsafeScopes.Count -eq 0)
+    try {
+        $policies = @(Get-ExecutionPolicy -List -ErrorAction Stop | Where-Object {
+            $_.PSObject.Properties.Match('Scope').Count -gt 0 -and $_.PSObject.Properties.Match('ExecutionPolicy').Count -gt 0
+        })
+        if ($policies.Count -eq 0) {
+            throw 'Get-ExecutionPolicy -List returned no scope/policy pairs on this host.'
+        }
 
-    $additionalProperties = @{ PolicyList = $policies; UnsafeScopes = ($unsafeScopes.Scope -join ', ') }
-    $processPolicy = ($policies | Where-Object { $_.Scope -eq 'Process' }).ExecutionPolicy
-    if ($processPolicy -in @('Unrestricted', 'Bypass')) {
-        $additionalProperties['Note'] = "Process scope = $processPolicy; excluded from evaluation as session-transient."
+        $machinePolicy = ($policies | Where-Object { $_.Scope -eq 'MachinePolicy' }).ExecutionPolicy
+        $localMachine = ($policies | Where-Object { $_.Scope -eq 'LocalMachine' }).ExecutionPolicy
+        $effectivePolicy = Get-ExecutionPolicy
+        # Process scope is session-local (e.g. set by starthere.ps1's own -ExecutionPolicy
+        # Bypass relaunch) and does not reflect host configuration, so it is excluded here.
+        $evaluatedPolicies = @($policies | Where-Object { $_.Scope -ne 'Process' })
+        $unsafeScopes = @($evaluatedPolicies | Where-Object { $_.ExecutionPolicy -in @('Unrestricted', 'Bypass') })
+        $restrictivePolicy = @('AllSigned', 'RemoteSigned')
+        $enabled = (($machinePolicy -in $restrictivePolicy) -or ($localMachine -in $restrictivePolicy)) -and ($unsafeScopes.Count -eq 0)
+
+        $additionalProperties = @{ PolicyList = $policies; UnsafeScopes = ($unsafeScopes.Scope -join ', ') }
+        $processPolicy = ($policies | Where-Object { $_.Scope -eq 'Process' }).ExecutionPolicy
+        if ($processPolicy -in @('Unrestricted', 'Bypass')) {
+            $additionalProperties['Note'] = "Process scope = $processPolicy; excluded from evaluation as session-transient."
+        }
+
+        ConvertTo-E8AssessmentResult `
+            -Check 'PowerShell Execution Policy' `
+            -Category 'PowerShell Hardening' `
+            -ML 'ML2' `
+            -Enabled $enabled `
+            -RawValue $effectivePolicy `
+            -Detail "Effective = $effectivePolicy; MachinePolicy = $machinePolicy; LocalMachine = $localMachine; PolicyList = $(ConvertTo-E8ValueText -Value ($policies | ForEach-Object { "$($_.Scope)=$($_.ExecutionPolicy)" }))" `
+            -Description 'Sets a baseline control for script execution and helps prevent accidental execution of untrusted scripts.' `
+            -Recommendation 'Set MachinePolicy or LocalMachine to AllSigned or RemoteSigned and remove Unrestricted or Bypass from all scopes.' `
+            -AdditionalProperties $additionalProperties
+    } catch {
+        Write-Warning "Could not evaluate PowerShell execution policy: $_"
+        ConvertTo-E8AssessmentResult `
+            -Check 'PowerShell Execution Policy' `
+            -Category 'PowerShell Hardening' `
+            -ML 'ML2' `
+            -Enabled $null `
+            -RawValue $null `
+            -Detail "Unable to evaluate execution policy scopes: $($_.Exception.Message)" `
+            -Description 'Sets a baseline control for script execution and helps prevent accidental execution of untrusted scripts.' `
+            -Recommendation 'Confirm Get-ExecutionPolicy -List runs correctly in an elevated PowerShell session on this host, then re-run the assessment.'
     }
-
-    ConvertTo-E8AssessmentResult `
-        -Check 'PowerShell Execution Policy' `
-        -Category 'PowerShell Hardening' `
-        -ML 'ML2' `
-        -Enabled $enabled `
-        -RawValue $effectivePolicy `
-        -Detail "Effective = $effectivePolicy; MachinePolicy = $machinePolicy; LocalMachine = $localMachine; PolicyList = $(ConvertTo-E8ValueText -Value ($policies | ForEach-Object { "$($_.Scope)=$($_.ExecutionPolicy)" }))" `
-        -Description 'Sets a baseline control for script execution and helps prevent accidental execution of untrusted scripts.' `
-        -Recommendation 'Set MachinePolicy or LocalMachine to AllSigned or RemoteSigned and remove Unrestricted or Bypass from all scopes.' `
-        -AdditionalProperties $additionalProperties
 }
 
 # Checks whether Windows Defender real-time protection is active.

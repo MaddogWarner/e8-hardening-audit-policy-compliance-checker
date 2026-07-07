@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented here.
 
+## [1.0.1] - 2026-07-07
+
+### Fixed
+
+- `Get-PSExecutionPolicyStatus` in `essential8compliancecheck.ps1` had no `try`/`catch` at all, so any unexpected shape from `Get-ExecutionPolicy -List` threw an unhandled `PropertyNotFoundException` under `Set-StrictMode -Version Latest` and aborted the entire E8 scan partway through, discarding all previously collected results. The function is now wrapped in a full `try`/`catch`, filters `Get-ExecutionPolicy -List` output to entries that actually expose `Scope` and `ExecutionPolicy`, and degrades to an indeterminate result with the real error message in `Detail` instead of crashing the scan. First reported when running the released v1.0.0 build on a real Windows 11 host.
+- `Get-NTLMAuditingStatus` in `auditpolicyassess.ps1` read `RestrictSendingNTLMTraffic` via `(Get-ItemProperty ... -ErrorAction SilentlyContinue).RestrictSendingNTLMTraffic`. When the registry value is absent — the common case on a workgroup host where outgoing NTLM auditing has never been configured — `Get-ItemProperty` returns `$null`, and dot-accessing a property on `$null` throws under `Set-StrictMode -Version Latest`, aborting the entire Audit Policy scan uncaught. The check now reuses the existing `Get-RegistryPropertyValue` helper from `essential8compliancecheck.ps1`, which already handles a missing value safely.
+- `Get-PowerShellV2Status` in `essential8compliancecheck.ps1` treated a `$null` result from `Get-WindowsOptionalFeature -Online -FeatureName MicrosoftWindowsPowerShellV2Root` as a query failure (indeterminate), even though some newer Windows builds no longer ship this optional feature at all. A missing optional feature now reports `Enabled $true` (compliant) with a `Detail` explaining the legacy engine is not present on this Windows build, rather than an indeterminate (`N/A`) result.
+
 ## [1.0.0] - 2026-07-07
 
 First stable release. All accuracy, reliability, and performance findings from the full codebase review are resolved; the tool is considered release-ready.

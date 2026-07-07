@@ -419,8 +419,13 @@ function Get-AuditRegistryStatus {
 
 # Checks outgoing NTLM auditing to support detection of NTLM relay, misuse, and brute-force activity.
 function Get-NTLMAuditingStatus {
-    $val = (Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0' `
-        -Name 'RestrictSendingNTLMTraffic' -ErrorAction SilentlyContinue).RestrictSendingNTLMTraffic
+    # Uses Get-RegistryPropertyValue from essential8compliancecheck.ps1 (dot-sourced by
+    # starthere.ps1 before this library) rather than Get-ItemProperty directly, because
+    # dot-accessing a property on the $null Get-ItemProperty returns when the value is
+    # absent throws under Set-StrictMode -Version Latest — the common case on a host
+    # where NTLM outgoing traffic auditing has never been configured.
+    $val = Get-RegistryPropertyValue -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa\MSV1_0' `
+        -Name 'RestrictSendingNTLMTraffic'
 
     $effectiveValue = if ($null -eq $val) { 0 } else { [int]$val }
     $detail = switch ($effectiveValue) {
