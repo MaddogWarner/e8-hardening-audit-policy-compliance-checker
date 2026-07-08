@@ -30,7 +30,8 @@ jobs:
           $results = Invoke-ScriptAnalyzer -Path . -Recurse -Severity Warning,Error
           if ($results) {
             $results | Format-Table -AutoSize
-            Write-Host "PSScriptAnalyzer found $($results.Count) issue(s)"
+            Write-Error "PSScriptAnalyzer found $($results.Count) issue(s)"
+            exit 1
           } else {
             Write-Host "PSScriptAnalyzer: no issues found"
           }
