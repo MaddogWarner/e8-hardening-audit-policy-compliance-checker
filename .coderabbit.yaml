@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-AU
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  poem: false
+  path_filters:
+    - "!E8-Report-*.md"
+    - "!E8-Report-*.csv"
+    - "!E8-HardeningTool-*.zip"
+  auto_review:
+    enabled: true
+    drafts: false
+  tools:
+    gitleaks:
+      enabled: false
+    psscriptanalyzer:
+      enabled: false
