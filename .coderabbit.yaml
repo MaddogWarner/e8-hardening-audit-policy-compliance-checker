@@ -14,6 +14,6 @@ reviews:
     drafts: false
   tools:
     gitleaks:
-      enabled: false
+      enabled: true
     psscriptanalyzer:
       enabled: false
